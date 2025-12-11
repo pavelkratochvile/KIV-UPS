@@ -1,0 +1,3 @@
+/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/build/CMakeFiles/server.dir
+/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/build/CMakeFiles/edit_cache.dir
+/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/build/CMakeFiles/rebuild_cache.dir

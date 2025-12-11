@@ -1,0 +1,27 @@
+[
+{
+  "directory": "/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/build",
+  "command": "/usr/bin/g++   -g -std=gnu++17 -o CMakeFiles/server.dir/src/server.cpp.o -c /mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/src/server.cpp",
+  "file": "/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/src/server.cpp"
+},
+{
+  "directory": "/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/build",
+  "command": "/usr/bin/g++   -g -std=gnu++17 -o CMakeFiles/server.dir/src/Player.cpp.o -c /mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/src/Player.cpp",
+  "file": "/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/src/Player.cpp"
+},
+{
+  "directory": "/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/build",
+  "command": "/usr/bin/g++   -g -std=gnu++17 -o CMakeFiles/server.dir/src/Game.cpp.o -c /mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/src/Game.cpp",
+  "file": "/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/src/Game.cpp"
+},
+{
+  "directory": "/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/build",
+  "command": "/usr/bin/g++   -g -std=gnu++17 -o CMakeFiles/server.dir/src/Messages.cpp.o -c /mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/src/Messages.cpp",
+  "file": "/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/src/Messages.cpp"
+},
+{
+  "directory": "/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/build",
+  "command": "/usr/bin/g++   -g -std=gnu++17 -o CMakeFiles/server.dir/src/SocketLib.cpp.o -c /mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/src/SocketLib.cpp",
+  "file": "/mnt/c/Users/pavel/Documents/ZS_25-26/UPS/UPS-SP/src/SocketLib.cpp"
+}
+]

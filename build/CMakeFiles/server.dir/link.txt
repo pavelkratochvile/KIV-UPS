@@ -1,0 +1,1 @@
+/usr/bin/g++ -g CMakeFiles/server.dir/src/server.cpp.o CMakeFiles/server.dir/src/Player.cpp.o CMakeFiles/server.dir/src/Game.cpp.o CMakeFiles/server.dir/src/Messages.cpp.o CMakeFiles/server.dir/src/SocketLib.cpp.o -o server 
