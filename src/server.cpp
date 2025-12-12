@@ -73,19 +73,31 @@ void Server::handleClient(int clientSocket, ConnectClientState state) {
 
         if(stateHandlers.find(state) != stateHandlers.end()){
             state = stateHandlers[state](message, clientSocket);
-        }
-        else{
+        } 
+        else {
             std::cout << "Pro tento stav neexistuje obslužná metoda. Stav: " << static_cast<int>(state) << std::endl;
             closeAndKickClient(clientSocket);
             return;
-        }     
+        }
+
+        if(state == ConnectClientState::Disconnect){
+            closeAndKickClient(clientSocket);
+            return;
+        }
+        if(state == ConnectClientState::Ready){
+            break;
+        }
     }
     
     std::cout << "Klient " << clientSocket << " dokončil handshake, state: " << static_cast<int>(state) << std::endl;
 }
 
 ConnectClientState Server::handleLoginAndReconnect(const std::string& message, const int& clientSocket){
-    std::vector<std::string> parts = parseMessage(message);
+    std::vector<std::string> parts = parseMessage(message);   
+    if(parts.size() < 2){
+        closeAndKickClient(clientSocket);
+        return ConnectClientState::Disconnect;
+    }
     LoginMessage lm = LoginMessage(parts);
     ReconnectMessage rm = ReconnectMessage(parts);
     ConnectClientState state;
@@ -176,7 +188,10 @@ ConnectClientState Server::handleReconnect(ReconnectMessage rm, int clientSocket
 
 ConnectClientState Server::handleLobbyRequest(const std::string& message, const int& clientSocket){
     std::vector<std::string> parts = parseMessage(message);
-    
+    if(parts.size() < 2){
+        closeAndKickClient(clientSocket);
+        return ConnectClientState::Disconnect;
+    }
     std::vector<std::string> roomList;
     {
         std::lock_guard<std::mutex> lock(rooms_mutex);
@@ -186,7 +201,6 @@ ConnectClientState Server::handleLobbyRequest(const std::string& message, const 
     }
     
     RoomListMessage rlm = RoomListMessage(parts, roomList);
-    
     if(!rlm.evaluate()){
         closeAndKickClient(clientSocket);
         return ConnectClientState::Disconnect;
@@ -206,11 +220,12 @@ ConnectClientState Server::handleRoomRequest(const std::string& message, const i
     
     if (!remt.evaluate()) { 
         closeAndKickClient(clientSocket);
-        std::cout << "1" << std::endl;
         return ConnectClientState::Disconnect;
     }
     int roomID = std::stoi(parts[4]);
     int role = std::stoi(parts[3]);
+
+    // Nejprve ověř, že do místnosti lze vstoupit (bez změny stavu).
     {
         std::lock_guard<std::mutex> lock(rooms_mutex);
         for(auto& game : gameRooms) {
@@ -234,6 +249,10 @@ ConnectClientState Server::handleRoomRequest(const std::string& message, const i
             }
         }
     }
+
+    // Přidej hráče a případně rovnou spusť hru, pokud je místnost kompletní.
+    bool shouldStartGame = false;
+    std::unique_ptr<Game>* gameToStart = nullptr;
     {
         std::lock_guard<std::mutex> lock(rooms_mutex);
         for(auto& game : gameRooms) {
@@ -249,8 +268,6 @@ ConnectClientState Server::handleRoomRequest(const std::string& message, const i
                         }
                     }
                     if(joiningPlayer.clientSocket == 0) {
-                        closeAndKickClient(clientSocket);
-                        std::cout << "4" << std::endl;
                         return ConnectClientState::Disconnect;
                     }
                 }
@@ -260,9 +277,26 @@ ConnectClientState Server::handleRoomRequest(const std::string& message, const i
                 else if(joiningPlayer.role == 1){
                     game->playerE = joiningPlayer;
                 }
+
+                // Když jsou oba hráči připraveni a hra ještě neběží, připrav start.
+                if(!game->isRunning && game->playerG.isValid && game->playerG.clientSocket > 0 &&
+                   game->playerE.isValid && game->playerE.clientSocket > 0){
+                    shouldStartGame = true;
+                    gameToStart = &game;
+                }
+
                 sendMessage(clientSocket, remt.serialize()); 
+                break;
             }
         }
+    }
+
+    // Spusť hru mimo zámek rooms_mutex.
+    if(shouldStartGame && gameToStart){
+        std::thread gameStartThread([this, gameToStart](){
+            startGame(*gameToStart);
+        });
+        gameStartThread.detach();
     }
     return ConnectClientState::Ready;
 }
@@ -282,6 +316,7 @@ std::vector<std::string> Server::parseMessage(const std::string& message){
     return tokens;
 }
 
+/*
 void Server::handleLobbyRooms() {
     // Collect sockets to close outside of locks to avoid holding locks while closing
     std::vector<int> socketsToClose;
@@ -312,6 +347,7 @@ void Server::handleLobbyRooms() {
         closeAndKickClient(s);
     }
 }
+    */
 
 void Server::handleGameRooms(){
     std::vector<std::unique_ptr<Game>*> gamesToStart;
@@ -375,11 +411,7 @@ void Server::startGame(std::unique_ptr<Game>& game){
 }
 
 void Server::lobbyLoop() {
-    while(true) {
-        handleGameRooms();
-        handleLobbyRooms();
-        std::this_thread::sleep_for(std::chrono::milliseconds(50)); 
-    }
+    // Hry se spouštějí ihned při vstupu hráče do místnosti; lobbyLoop už nic nedělá.
 }
 
 int Server::runServer(){
@@ -402,11 +434,6 @@ int Server::runServer(){
 
     listen(serverSocket, 10);
     std::cout << "Server běží na portu " << this->port << std::endl;
-
-    std::thread lobbyThread(&Server::lobbyLoop, this);
-    lobbyThread.detach();
-
-    
 
     while(true){
         int clientSocket = accept(serverSocket, nullptr, nullptr);

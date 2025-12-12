@@ -57,6 +57,7 @@ void Game::continueGame(Player& reconnectedPlayer){
 
 
 void Game::start(){
+    std::cout << "Spouštím hru v místnosti " << this->gameID << std::endl;
     this->isRunning = true;
     this->isPaused = false;
     this->gameState = GameState::Choosing;
