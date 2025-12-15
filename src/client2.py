@@ -489,9 +489,11 @@ class LogikApp:
                 return
             data_str = data.decode()
             parts = data_str.split(":")
-            self.other_player_name = parts[2]
+            # GAME_START může přijít buď jako LK:GAME_START nebo LK:GAME_START:<name>
+            if len(parts) >= 3:
+                self.other_player_name = parts[2]
 
-            if self.evaluate_message(data_str, "GAME_START", 3):
+            if self.evaluate_message(data_str, "GAME_START", -1):
                 message = f"{self.GAME_PREFIX}:READY_GAME_START:{self.name}:{self.role}"
                 sendMessage(self.socket, message.encode())
                 self.updateStatus("✅ Hra začíná!", "#3cb44b")
