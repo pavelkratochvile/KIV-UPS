@@ -225,6 +225,7 @@ std::string ReconnectMessage::serialize() const{
             message += DELIM;
         }
         message += std::to_string(this->state) + DELIM + this->otherPlayerName + DELIM;
+        
         for (const auto& color : secretColors) {
             message += std::to_string(static_cast<int>(color));
         }
