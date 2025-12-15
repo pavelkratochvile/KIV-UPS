@@ -437,9 +437,14 @@ bool Game::manageMessageDissconnectedE(const std::string& message, bool guesser)
     std::vector<std::string> parts = server->parseMessage(message);
     GuessingColorsMessage gcm = GuessingColorsMessage(parts);
     
-    if(message.find(ALIVE_PREFIX) != std::string::npos && guesser){
-        std::lock_guard<std::mutex> lock(recvQueueMutexE);
-        recvPingMessageQueueG.push(message);
+    if(message.find(ALIVE_PREFIX) != std::string::npos){  // PING od KTERÉHOKOLIV hráče
+        if(guesser){
+            std::lock_guard<std::mutex> lock(recvQueueMutexE);
+            recvPingMessageQueueG.push(message);
+        } else {
+            std::lock_guard<std::mutex> lock(recvQueueMutexG);
+            recvPingMessageQueueE.push(message);
+        }
         return true;
     }
     
@@ -466,9 +471,14 @@ bool Game::manageMessageDissconnectedG(const std::string& message, bool guesser)
     std::vector<std::string> parts = server->parseMessage(message);
     EvaluationMessage em = EvaluationMessage(parts);
     WinGameMessage wgm = WinGameMessage(parts);
-    if(message.find(ALIVE_PREFIX) != std::string::npos && !guesser){
-        std::lock_guard<std::mutex> lock(recvQueueMutexG);
-        recvPingMessageQueueE.push(message);
+    if(message.find(ALIVE_PREFIX) != std::string::npos){  // PING od KTERÉHOKOLIV hráče
+        if(!guesser){
+            std::lock_guard<std::mutex> lock(recvQueueMutexG);
+            recvPingMessageQueueE.push(message);
+        } else {
+            std::lock_guard<std::mutex> lock(recvQueueMutexE);
+            recvPingMessageQueueG.push(message);
+        }
         return true;
     }
     else if(message.find(PERMANENT_DISCONNECT_CONFIRM_PREFIX) != std::string::npos || 
@@ -589,6 +599,7 @@ void Game::receiveLoopE(){
             }
             bool rightReceive = stateHandlers[gameState](message, false);
             if(!rightReceive){
+                std::cout << "Chybná zpráva od hráče E v aktuálním stavu, ukončuji hru: "<< message << "Ve stavu: ";
                 this->gameState = GameState::DisconnectedE;
                 this->isRunning = false;
                 Player playerGcopy = playerG;
