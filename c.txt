@@ -1,0 +1,1 @@
+python -c "import socket; s = socket.socket(); s.settimeout(3); s.connect(('147.228.67.104', 10002)); print('OK')"

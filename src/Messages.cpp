@@ -100,11 +100,12 @@ bool RoomEntryMessage::evaluate(){
 // -------------------------------------------------
 // GameStartMessage
 // -------------------------------------------------
-GameStartMessage::GameStartMessage(){
+GameStartMessage::GameStartMessage(std::string otherPlayerName){
+    this->otherPlayerName = otherPlayerName;
 }
 
 std::string GameStartMessage::serialize() const{
-    return std::string(GAME_PREFIX) + DELIM + std::string(GAME_START_PREFIX);
+    return std::string(GAME_PREFIX) + DELIM + std::string(GAME_START_PREFIX) + DELIM + this->otherPlayerName;
 }
 
 bool GameStartMessage::evaluate(){
@@ -223,7 +224,7 @@ std::string ReconnectMessage::serialize() const{
             message += std::to_string(ri.blacks) + std::to_string(ri.whites);
             message += DELIM;
         }
-        message += std::to_string(this->state);
+        message += std::to_string(this->state) + DELIM + this->otherPlayerName;
         return message;
     }
     else{
@@ -414,6 +415,8 @@ bool ReconnectOtherPlayerMessage::evaluate(){
     }
     std::string gamePrefix = parts[0];
     std::string statePrefix = parts[1];
+
+    std::cout << "Evaluating ReconnectOtherPlayerMessage se vole nekde udelala: " << gamePrefix << " , " << statePrefix << std::endl;
 
     if (gamePrefix != GAME_PREFIX || statePrefix != RECONNECT_OTHER_PLAYER_PREFIX_ACK) {
         return false;

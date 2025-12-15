@@ -1134,6 +1134,7 @@ CMakeFiles/server.dir/src/server.cpp.o: /mnt/c/Users/pavel/Documents/ZS_25-26/UP
   /usr/include/x86_64-linux-gnu/bits/types/struct_osockaddr.h \
   /usr/include/netinet/in.h \
   /usr/include/x86_64-linux-gnu/bits/in.h \
+  /usr/include/arpa/inet.h \
   /usr/include/unistd.h \
   /usr/include/x86_64-linux-gnu/bits/posix_opt.h \
   /usr/include/x86_64-linux-gnu/bits/environments.h \

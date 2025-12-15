@@ -136,11 +136,12 @@ private:
 // -------------------------------------------------
 class GameStartMessage : public Message {
 public:
-    GameStartMessage();  // Pro vytváření na serveru
+    GameStartMessage(std::string otherPlayerName);  // Pro vytváření na serveru
 
     std::string serialize() const override;
     bool evaluate() override;
     std::vector<std::string> parts;
+    std::string otherPlayerName;
 };
 
 // -------------------------------------------------
@@ -195,6 +196,7 @@ public:
     int roundNumber;
     int state;
     std::string name;
+    std::string otherPlayerName;
     int role;
 };
 

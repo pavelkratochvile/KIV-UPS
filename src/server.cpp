@@ -8,6 +8,7 @@
 #include <cstring>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <signal.h>
 #include <random>
@@ -18,7 +19,7 @@
 #include "SocketLib.hpp"
 #include "Messages.hpp"
 
-Server::Server(int port, int roomCount) : port(port), roomCount(roomCount) {
+Server::Server(const std::string& bindAddress, int port, int roomCount) : bindAddress(bindAddress), port(port), roomCount(roomCount) {
     stateHandlers = {
         {ConnectClientState::Foreign, [this](const std::string& message, const int& clientSocket){ return this->handleLoginAndReconnect(message, clientSocket); }},
         {ConnectClientState::Login,   [this](const std::string& message, const int& clientSocket){ return this->handleLobbyRequest(message, clientSocket); }},
@@ -160,6 +161,7 @@ ConnectClientState Server::handleReconnect(ReconnectMessage rm, int clientSocket
                 rm.gameInfo = game->gameInfo;
                 rm.roundNumber = game->roundNumber;
                 rm.state = static_cast<int>(game->lastValidState);
+                rm.otherPlayerName = game->playerE.name;
             }
             if(game->playerE.name == rm.name && game->playerE.role == rm.role && game->playerE.isValid == false && game->isRunning){
                 std::cout << "Nastavuji nový socket pro hráče E při reconnectu." << std::endl;
@@ -172,6 +174,7 @@ ConnectClientState Server::handleReconnect(ReconnectMessage rm, int clientSocket
                 rm.gameInfo = game->gameInfo;
                 rm.roundNumber = game->roundNumber;
                 rm.state = static_cast<int>(game->lastValidState);
+                rm.otherPlayerName = game->playerG.name;
             }
         }
     }
@@ -374,8 +377,8 @@ void Server::handleGameRooms(){
 }
 
 void Server::startGame(std::unique_ptr<Game>& game){
-    GameStartMessage gsmE = GameStartMessage();
-    GameStartMessage gsmG = GameStartMessage();
+    GameStartMessage gsmE = GameStartMessage(game->playerG.name);
+    GameStartMessage gsmG = GameStartMessage(game->playerE.name);
     
     // Pošli start messages
     if(!sendMessage(game->playerE.clientSocket, gsmE.serialize())){
@@ -425,7 +428,15 @@ int Server::runServer(){
     std::memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(this->port);
-    addr.sin_addr.s_addr = INADDR_ANY;
+
+    if(this->bindAddress == "0.0.0.0" || this->bindAddress == "any"){
+        addr.sin_addr.s_addr = INADDR_ANY;
+    } else {
+        if(inet_pton(AF_INET, this->bindAddress.c_str(), &addr.sin_addr) != 1){
+            std::cerr << "Neplatná bind adresa: " << this->bindAddress << std::endl;
+            return 1;
+        }
+    }
 
     if(bind(serverSocket, (sockaddr*)&addr, sizeof(addr)) < 0){
         perror("bind");
@@ -433,7 +444,7 @@ int Server::runServer(){
     }
 
     listen(serverSocket, 10);
-    std::cout << "Server běží na portu " << this->port << std::endl;
+    std::cout << "Server běží na adrese " << this->bindAddress << ":" << this->port << std::endl;
 
     while(true){
         int clientSocket = accept(serverSocket, nullptr, nullptr);
@@ -479,8 +490,17 @@ void Server::returnPlayerToLobby(Player& player) {
 int main(int argc, char* argv[]){
     // Ignore SIGPIPE so that writing to closed sockets does not terminate the process.
     signal(SIGPIPE, SIG_IGN);
+
+    if(argc < 3){
+        std::cerr << "Použití: " << argv[0] << " <roomCount> <port> [bindAddress]" << std::endl;
+        return 1;
+    }
+
     int roomCount = std::stoi(argv[1]);
-    Server server(std::stoi(argv[2]), roomCount);
+    int port = std::stoi(argv[2]);
+    std::string bindAddress = (argc >= 4) ? std::string(argv[3]) : std::string("0.0.0.0");
+
+    Server server(bindAddress, port, roomCount);
     server.runServer();
     return 0;
 }

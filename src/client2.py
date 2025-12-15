@@ -3,8 +3,8 @@ import threading
 import time
 import tkinter as tk
 from tkinter import messagebox
-from tkinter import ttk  # Import theme specific widgets
-from random import randint
+from tkinter import ttk
+from random import choice, randint, random
 import sys
 import os
 
@@ -15,10 +15,8 @@ class RoundInfo:
         self.roundNumber = roundNumber
         # 6 = bílá / bez barvy - default hodnota
         self.guesses = [[6] * num_pegs] 
-        self.evaluations = [] # List hodnocení (tuple/str)
+        self.evaluations = [] # List hodnocení
 
-
-# --- HLAVNÍ APLIKACE A HERNÍ LOGIKA (LogikApp) ---
 
 class LogikApp:
     def __init__(self, master, host, port):
@@ -27,11 +25,7 @@ class LogikApp:
         self.master.geometry("600x800")
         self.master.minsize(550, 750)
         
-        # --- Nastavení témat pro ttk ---
-        # ttk widgety vypadají moderněji
         self.style = ttk.Style()
-        # Můžete zkusit různá témata: 'clam', 'alt', 'default', 'classic', 'vista', 'xpnative'
-        # 'clam' nebo 'alt' bývá čistší.
         try:
             self.style.theme_use('clam')
         except tk.TclError:
@@ -54,6 +48,7 @@ class LogikApp:
         self.reconnected = False
         self.reconnectData = None
         self.input_values = None 
+        self.other_player_name = None
         
         # --- HERNÍ STAV ---
         self.isRunning = False
@@ -175,12 +170,12 @@ class LogikApp:
         role_text = "Hodnotitel" if self.role == 1 else "Tipující"
         tk.Label(self.top_frame, text=f"Hráč: {self.name} | Role: {role_text}", font=("Helvetica", 10), bg="#ffffff").pack(pady=2)
 
+        # Testovací tlačítko: pošli záměrně vadnou zprávu serveru
+        test_btn = ttk.Button(self.top_frame, text="Odeslat vadnou zprávu", command=self.send_bad_message)
+        test_btn.pack(pady=5)
+
         # Presence Bar
         self.buildPresenceBar(self.top_frame)
-
-        # --- Debug: Disconnect button (pro testování) ---
-        self.debug_disconnect_btn = ttk.Button(self.top_frame, text="[TEST] Simuluj výpadek", command=self._debug_disconnect)
-        self.debug_disconnect_btn.pack(pady=2)
 
         # --- Evaluator Secret Combination Display ---
         self.secret_frame = tk.Frame(self.game_frame, bg="#fcfcfc")
@@ -208,6 +203,17 @@ class LogikApp:
 
         threading.Thread(target=self.recvMessageThread, daemon=True).start()
         threading.Thread(target=self.reconnectMonitor, daemon=True).start()
+
+    def send_bad_message(self):
+        """Pošle záměrně vadnou zprávu serveru pro test jeho reakce."""
+        try:
+            msg = f"{self.GAME_PREFIX}:BAD_MESSAGE"
+            sendMessage(self.socket, msg.encode())
+            print("[TEST] Odeslána vadná zpráva:", msg)
+            self.updateStatus("Vadná zpráva odeslána.", "#f58231")
+        except Exception as e:
+            print("[TEST] Nepodařilo se odeslat vadnou zprávu:", e)
+            self.updateStatus("Chyba při odesílání vadné zprávy.", "#e6194b")
 
     # =========================================================================
     # Komunikace a stav serveru
@@ -479,8 +485,10 @@ class LogikApp:
                 self.master.after(1000, self.on_close)
                 return
             data_str = data.decode()
+            parts = data_str.split(":")
+            self.other_player_name = parts[2]
 
-            if self.evaluate_message(data_str, "GAME_START", 2):
+            if self.evaluate_message(data_str, "GAME_START", 3):
                 message = f"{self.GAME_PREFIX}:READY_GAME_START:{self.name}:{self.role}"
                 sendMessage(self.socket, message.encode())
                 self.updateStatus("✅ Hra začíná!", "#3cb44b")
@@ -506,7 +514,7 @@ class LogikApp:
         me_frame.pack(side=tk.LEFT, padx=15)
         self.me_status_canvas = tk.Canvas(me_frame, width=16, height=16, highlightthickness=0, bd=0, bg="#ffffff")
         self.me_status_canvas.pack(side=tk.LEFT, padx=4)
-        self.me_status_label = tk.Label(me_frame, text=f"Já: ", bg="#ffffff")
+        self.me_status_label = tk.Label(me_frame, text=f"{self.name}", bg="#ffffff")
         self.me_status_label.pack(side=tk.LEFT)
 
         # Protihráč
@@ -514,7 +522,7 @@ class LogikApp:
         opp_frame.pack(side=tk.LEFT, padx=15)
         self.opponent_status_canvas = tk.Canvas(opp_frame, width=16, height=16, highlightthickness=0, bd=0, bg="#ffffff")
         self.opponent_status_canvas.pack(side=tk.LEFT, padx=4)
-        self.opponent_status_label = tk.Label(opp_frame, text=f"Protihráč: ", bg="#ffffff")
+        self.opponent_status_label = tk.Label(opp_frame, text=f"{self.other_player_name if self.other_player_name else ''}", bg="#ffffff")
         self.opponent_status_label.pack(side=tk.LEFT)
 
         self.updatePresenceUI()
@@ -535,9 +543,9 @@ class LogikApp:
                 canvas.create_oval(2, 2, 14, 14, fill=col, outline=col)
 
             if self.me_status_label:
-                self.me_status_label.config(text=f"Já: {self.name}")
+                self.me_status_label.config(text=f"{self.name}")
             if self.opponent_status_label:
-                self.opponent_status_label.config(text=f"Protihráč: {self.opponent_name}")
+                self.opponent_status_label.config(text=f"{self.other_player_name if self.other_player_name else ''}")
 
             paint(self.me_status_canvas, self.me_online)
             paint(self.opponent_status_canvas, self.opponent_online)
@@ -556,10 +564,17 @@ class LogikApp:
             
             current_round_num = int(parts[2])
             game_state = int(parts[-1]) if parts[-1].isdigit() else 0
+
+            # Pokud poslední položka není číslo stavu, ale jméno protihráče, získej jej z konce
+            if not parts[-1].isdigit() and len(parts) >= 5:
+                self.other_player_name = parts[-1]
+                # Stav hry by pak měl být v předposlední položce
+                game_state = int(parts[-2]) if parts[-2].isdigit() else 0
             
             self._initialize_rounds() 
             
-            round_data_parts = parts[3:-1] if len(parts) > 4 else []
+            # Očekáváme, že poslední prvek je buď stav, nebo jméno; předposlední pak stav
+            round_data_parts = parts[3:-2] if len(parts) > 5 else (parts[3:-1] if len(parts) > 4 else [])
             
             for i, round_str in enumerate(round_data_parts):
                 if len(round_str) < 4: 
@@ -1022,20 +1037,6 @@ class LogikApp:
     # Různé a pomocné funkce (Client/Game)
     # =========================================================================
 
-    def _debug_disconnect(self):
-        """[TEST] Simuluj network disconnect bez ukončení klienta"""
-        try:
-            # Zablokuj tlačítko aby se nemohlo kliknout znovu
-            if hasattr(self, 'debug_disconnect_btn'):
-                self.debug_disconnect_btn.config(state=tk.DISABLED)
-            
-            if self.socket:
-                self.socket.close()
-            print("[TEST] Socket přerušen - testování reconnectu...")
-            self.master.after(0, self.handleDisconnect)
-        except Exception as e:
-            print(f"[TEST] Chyba: {e}")
-
     def updateStatus(self, text, color):
         """Aktualizace statusu v GUI (thread-safe)"""
         self.update_status_safely(self.status_label, text, color)
@@ -1127,6 +1128,7 @@ class LogikApp:
                 sendMessage(self.socket, pong_msg.encode())
             except Exception:
                 self.master.after(0, self.handleDisconnect)
+
         
         elif msg_type == "WIN_GAME":
             if(int(parts[2]) == self.role):
@@ -1167,6 +1169,13 @@ class LogikApp:
             opponent_name = parts[2] if len(parts) > 2 else self.opponent_name
             self.opponent_online = 1
             self.updatePresenceUI(opponent_name)
+            respond_message = f"{self.GAME_PREFIX}:RECONNECT_OTHER_PLAYER_ACK"
+
+            try:
+                sendMessage(self.socket, respond_message.encode())
+            except Exception:
+                pass
+
 
         elif msg_type == "CHOOSING_COLORS_CONFIRM":
             if self.role == 0:
@@ -1305,7 +1314,8 @@ class LogikApp:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python logik_app.py <port>")
+        print("Usage: python client2.py <port> [host]")
+        print("       host default: 127.0.0.1")
         sys.exit(1)
         
     try:
@@ -1314,7 +1324,7 @@ def main():
         print("Port musí být celé číslo.")
         sys.exit(1)
     
-    host = "127.0.0.1"
+    host = sys.argv[2] if len(sys.argv) >= 3 else "127.0.0.1"
     
     root = tk.Tk()
     app = LogikApp(root, host, port)

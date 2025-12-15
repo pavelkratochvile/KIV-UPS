@@ -264,6 +264,7 @@ bool Game::manageMessageChoosing(const std::string& message, bool guesser){
     std::vector<std::string> parts = server->parseMessage(message);
     HeartBeatMessage hbm = HeartBeatMessage(parts);
     ChoosingColorsMessage crm = ChoosingColorsMessage(parts);
+    ReconnectOtherPlayerMessage ropm = ReconnectOtherPlayerMessage(parts);
     if(hbm.evaluate()){
         if(guesser){
             std::lock_guard<std::mutex> lock(recvQueueMutexG);
@@ -285,6 +286,10 @@ bool Game::manageMessageChoosing(const std::string& message, bool guesser){
         }
         this->chosenColors = crm.colors;
         gameState = GameState::Guessing;
+        return true;
+    }
+    else if(ropm.evaluate()){
+        std::cout << "ReconnectOtherPlayerMessage received. From not disconnected player." << std::endl;
         return true;
     }
     return false;

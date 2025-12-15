@@ -24,7 +24,7 @@ enum class ConnectClientState{
 
 class Server{
 public:
-    Server(int port, int roomCount);
+    Server(const std::string& bindAddress, int port, int roomCount);
     int runServer();
 
     void handleClient(int clientSocket, ConnectClientState state);    
@@ -46,6 +46,7 @@ public:
     void removePlayerFromRoom(int clientSocket);
 
     int serverSocket;
+    std::string bindAddress;
     int port;
     std::unordered_map<ConnectClientState, std::function<ConnectClientState(const std::string&, const int&)>> stateHandlers;
 
