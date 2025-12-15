@@ -59,7 +59,7 @@ class LogikApp:
         self.currentRoundNumber = 0 
         self.rounds = []
         self.reconnecting = False
-        self.disconnected_time = None
+        self.last_online = None
         self.me_online = 1
         self.opponent_online = 1
         self.opponent_name = "Protihráč"
@@ -173,10 +173,6 @@ class LogikApp:
         # Testovací tlačítko: pošli záměrně vadnou zprávu serveru
         test_btn = ttk.Button(self.top_frame, text="Odeslat vadnou zprávu", command=self.send_bad_message)
         test_btn.pack(pady=5)
-        
-        # Testovací tlačítko: simuluj vytažení kabelu
-        unplug_btn = ttk.Button(self.top_frame, text="Simuluj vytažení kabelu", command=self.simulate_cable_unplug)
-        unplug_btn.pack(pady=5)
 
         # Presence Bar
         self.buildPresenceBar(self.top_frame)
@@ -205,8 +201,13 @@ class LogikApp:
         elif start_type == 'reconnect':
             pass
 
+        self.last_online = time.time()
         threading.Thread(target=self.recvMessageThread, daemon=True).start()
         threading.Thread(target=self.reconnectMonitor, daemon=True).start()
+        try:
+            print("[DEBUG] reconnectMonitor spuštěn")
+        except Exception:
+            pass
 
     def send_bad_message(self):
         """Pošle záměrně vadnou zprávu serveru pro test jeho reakce."""
@@ -218,17 +219,6 @@ class LogikApp:
         except Exception as e:
             print("[TEST] Nepodařilo se odeslat vadnou zprávu:", e)
             self.updateStatus("Chyba při odesílání vadné zprávy.", "#e6194b")
-    
-    def simulate_cable_unplug(self):
-        """Simuluje vytažení kabelu - násilně uzavře socket."""
-        try:
-            print("[TEST] Simuluji vytažení kabelu - zavírám socket")
-            self.socket.close()
-            self.updateStatus("Kabel vytažen! (simulace)", "#e6194b")
-            print("[TEST] Socket uzavřen")
-        except Exception as e:
-            print(f"[TEST] Chyba při zavírání socketu: {e}")
-            self.updateStatus("Chyba při simulaci vytažení kabelu.", "#e6194b")
 
     # =========================================================================
     # Komunikace a stav serveru
@@ -238,9 +228,7 @@ class LogikApp:
         try:
             print(f"[DEBUG] Připojuji se na {self.host}:{self.port} (typ: {type(self.host)}, {type(self.port)})")
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(30.0)  # Dlouhý timeout jen na connect (pomalá síť, firewall)
             self.socket.connect((self.host, self.port))
-            self.socket.settimeout(None)  # Žádný timeout během hry - reconnectMonitor hlídá offline
             print(f"[DEBUG] Připojení úspěšné!")
             self.connected = True
             return True
@@ -1122,20 +1110,34 @@ class LogikApp:
 
     def recvMessageThread(self):
         """Hlavní smyčka pro příjem zpráv od serveru"""
+        # Nastav timeout, aby při ztrátě konektivity recv vyhodil výjimku
+        try:
+            if self.socket:
+                self.socket.settimeout(6.0)
+                print("[DEBUG] socket timeout nastaven na 6s")
+        except Exception:
+            pass
         while self.isRunning:
             try:
                 data = recvMessage(self.socket)
                 if not data:
-                    print("[DEBUG] recvMessage vrátil None - server zavřel spojení")
                     self.master.after(0, self.handleDisconnect)
-                    break  # Ukončit thread, reconnectMonitor se postará
+                    continue
                     
                 message = data.decode()
+                try:
+                    self.last_online = time.time()
+                except Exception:
+                    pass
                 self.handleMessage(message)
-            except Exception as e:
-                print(f"[DEBUG] recvMessageThread exception: {e}")
+            except socket.timeout:
+                # Neaktivita -> detekuj odpojení a přepni do reconnectingu
+                print("[DEBUG] recv timeout -> handleDisconnect")
                 self.master.after(0, self.handleDisconnect)
-                break  # Ukončit thread
+                time.sleep(0.1)
+            except Exception:
+                self.master.after(0, self.handleDisconnect)
+                time.sleep(0.1)
 
     def handleMessage(self, message):
         """Zpracování příchozích zpráv."""
@@ -1147,8 +1149,12 @@ class LogikApp:
         msg_type = parts[1]
         
         if msg_type == "PING":
+            # během reconnectu neposílej PONG, ať to nezablokuje vlákno
+            if self.reconnecting:
+                return
             pong_msg = f"{self.GAME_PREFIX}:PONG:{self.name}:{self.role}"
             try:
+                self.last_online = time.time()
                 sendMessage(self.socket, pong_msg.encode())
             except Exception:
                 self.master.after(0, self.handleDisconnect)
@@ -1252,50 +1258,34 @@ class LogikApp:
             return
         if not self.reconnecting:
             self.reconnecting = True
-            self.disconnected_time = time.time()
             self.me_online = 0
             self.updatePresenceUI()
             self.updateStatus("Odpojeno - pokus o reconnect...", "#e6194b")
     
     def reconnectMonitor(self):
         """Monitoruje stav připojení a pokouší se o reconnect"""
+        retry_delay = 2.0
         while self.isRunning:
             if self.reconnecting:
-                elapsed = time.time() - self.disconnected_time
-                
-                if elapsed > 7 and elapsed < 20:
-                    self.updateStatus(f"Reconnecting... ({int(elapsed)}s)", "#f58231")
-                    if self.attemptReconnect():
-                        self.reconnecting = False
-                        self.disconnected_time = None
-                        self.me_online = 1
-                        print("Reconnected successfully. Přes reconnectMonitor.")
-                        self.updateStatus("Připojeno zpět - hra pokračuje", "#3cb44b")
-                        self.updatePresenceUI()
-                    else:
-                        time.sleep(1)
-                
-                elif elapsed >= 20 and elapsed < 45:
-                    self.updateStatus("Je třeba se znovu přihlásit (Reconnect v Login okně).", "#e6194b")
-                    self.isRunning = False
-                    self.master.after(0, self.show_login)
-                    break
-                
-                elif elapsed >= 45:
-                    self.updateStatus("Příliš dlouhé odpojení, hra končí.", "#e6194b")
-                    self.isRunning = False
-                    self.master.after(0, self.returnToLobby)
-                    break
-            
-            time.sleep(0.5)
+                ref = self.last_online if isinstance(self.last_online, (int, float)) else time.time()
+                elapsed = int(time.time() - ref)
+                self.updateStatus(f"Reconnecting... ({elapsed}s)", "#f58231")
+                if self.attemptReconnect():
+                    self.reconnecting = False
+                    self.last_online = time.time()
+                    self.me_online = 1
+                    self.updatePresenceUI()
+                    self.updateStatus("Připojeno zpět - hra pokračuje", "#3cb44b")
+                else:
+                    time.sleep(retry_delay)
+            else:
+                time.sleep(0.5)
     
     def attemptReconnect(self):
         """Pokus o reconnect k serveru v Game fázi."""
         try:
             new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            new_socket.settimeout(5.0)  # Krátký timeout jen na connect pokus
-            new_socket.connect((self.host, self.port))
-            new_socket.settimeout(None)  # Žádný timeout během hry 
+            new_socket.connect((self.host, self.port)) 
             
             reconnect_msg = f"{self.GAME_PREFIX}:RECONNECT_REQUEST:{self.name}:{self.role}"
             sendMessage(new_socket, reconnect_msg.encode())
