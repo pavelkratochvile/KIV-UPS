@@ -221,11 +221,14 @@ class LogikApp:
 
     def connect_to_server(self):
         try:
+            print(f"[DEBUG] Připojuji se na {self.host}:{self.port} (typ: {type(self.host)}, {type(self.port)})")
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.host, self.port))
+            print(f"[DEBUG] Připojení úspěšné!")
             self.connected = True
             return True
         except Exception as e:
+            print(f"[DEBUG] Chyba připojení: {type(e).__name__}: {e}")
             messagebox.showerror("Connection Error", f"Nepodařilo se připojit k serveru: {e}")
             self.socket = None
             self.connected = False
