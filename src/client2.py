@@ -487,6 +487,10 @@ class LogikApp:
 
     def wait_for_game_start(self):
         try:
+            # Resetuj socket timeout - čekáme nekonečně na GAME_START
+            if self.socket:
+                self.socket.settimeout(None)
+            
             data = recvMessage(self.socket)
             if not data:
                 self.updateStatus("❌ Server neodpovídá.", "#e6194b")
@@ -566,61 +570,54 @@ class LogikApp:
             pass
 
     def parseAndAttachReconnectData(self, data):
-        """Parsuje data po reconnectu a obnovuje herní stav podle aktuálního formátu serveru.
-
-        Formát zprávy (DELIM=':'):
-        LK:RECONNECT_CONFIRM:<round>:(round0)...:(round9):<state>:<otherPlayerName>:(secretDigits)
-        - (roundX) je řetězec 6 číslic: 4 pro tip + 2 pro blacks/whites
-        - secretDigits = 4 číslice 0-5 (bez dalšího delimiteru)
-        """
+        """Parsuje data po reconnectu a obnovuje herní stav."""
+        print(f"Parsuji reconnect data: {data}")
         try:
             parts = data.split(":")
-            if len(parts) < 7 or parts[0] != self.GAME_PREFIX or parts[1] != "RECONNECT_CONFIRM":
-                return 0
-
-            # Základní pole
+            if len(parts) < 4 or parts[1] != "RECONNECT_CONFIRM":
+                return 0 
+            
             current_round_num = int(parts[2])
-            secret_token = parts[-1] if len(parts) >= 1 else ""
-            other_name = parts[-2] if len(parts) >= 2 else ""
-            state_token = parts[-3] if len(parts) >= 3 else "0"
+            game_state = int(parts[-1]) if parts[-1].isdigit() else 0
 
-            # Stav hry
-            game_state = int(state_token) if state_token.isdigit() else 0
-            self.other_player_name = other_name
-
-            # Parsování kol (vše mezi indexem 3 a indexem -3)
-            self._initialize_rounds()
-            round_data_parts = parts[3:-3] if len(parts) > 6 else []
+            # Pokud poslední položka není číslo stavu, ale jméno protihráče, získej jej z konce
+            if not parts[-1].isdigit() and len(parts) >= 5:
+                self.other_player_name = parts[-1]
+                # Stav hry by pak měl být v předposlední položce
+                game_state = int(parts[-2]) if parts[-2].isdigit() else 0
+            
+            self._initialize_rounds() 
+            
+            # Očekáváme, že poslední prvek je buď stav, nebo jméno; předposlední pak stav
+            round_data_parts = parts[3:-2] if len(parts) > 5 else (parts[3:-1] if len(parts) > 4 else [])
+            
             for i, round_str in enumerate(round_data_parts):
-                if not round_str or len(round_str) < 2:
+                if len(round_str) < 4: 
                     continue
+                
                 guesses_str = round_str[:-2]
                 try:
                     blacks = int(round_str[-2])
                     whites = int(round_str[-1])
-                except Exception:
+                except (ValueError, IndexError):
                     continue
-
-                guesses_list = [int(ch) for ch in guesses_str if ch.isdigit()][:self.num_pegs]
+                
                 if i < len(self.rounds):
                     round_obj = self.rounds[i]
                 else:
                     round_obj = RoundInfo(i, self.num_pegs)
                     self.rounds.append(round_obj)
+                
+                guesses_list = [int(ch) for ch in guesses_str if ch.isdigit()][:self.num_pegs]
+                
                 round_obj.guesses = [guesses_list]
                 round_obj.evaluations = [(blacks, whites)]
-
+            
             self.currentRoundNumber = current_round_num
-
-            # Tajná kombinace v posledním tokenu jako 4 číslice 0-5
-            if isinstance(secret_token, str) and len(secret_token) >= 4 and all(ch in "012345" for ch in secret_token[:4]):
-                secret_code = [int(ch) for ch in secret_token[:4]]
-                if self.role == 1:
-                    self.input_values = secret_code[:self.num_pegs]
-
+            
         except Exception as e:
             print(f"Chyba při parsování reconnect dat: {e}")
-
+        
         return game_state
 
     def showInputPanel(self, role):
@@ -1327,6 +1324,13 @@ class LogikApp:
         self.reconnecting = False
         self.currentRoundNumber = 0
         self._initialize_rounds()
+        
+        # Reset socket timeoutu - v lobby čekáme bez timeoutu
+        if self.socket:
+            try:
+                self.socket.settimeout(None)
+            except Exception:
+                pass
         
         # Reset herních UI referencí
         self.e_board_frame = None
