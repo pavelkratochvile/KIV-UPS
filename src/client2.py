@@ -566,53 +566,75 @@ class LogikApp:
             pass
 
     def parseAndAttachReconnectData(self, data):
-        """Parsuje data po reconnectu a obnovuje herní stav."""
+        """Parsuje data po reconnectu a obnovuje herní stav.
+
+        Nově: na konci mohou být 4 int hodnoty tajné kombinace. Pokud jsme evaluator (role 1),
+        uložíme je do input_values pro zobrazení tajné kombinace.
+        """
         try:
             parts = data.split(":")
             if len(parts) < 4 or parts[1] != "RECONNECT_CONFIRM":
-                return 0 
-            
+                return 0
+
+            # Pokud na konci dorazily barvy tajné kombinace, odřízneme je.
+            # Podporujeme dvě podoby:
+            # 1) Původní formát: 4 číslice v jednom tokenu (např. "0123")
+            # 2) Nový formát: 4 samostatné tokeny oddělené DELIM
+            secret_code = None
+            if len(parts) >= 7 and all(p.isdigit() for p in parts[-4:]):
+                secret_code = [int(p) for p in parts[-4:]]  # 4 oddělené tokeny
+                parts = parts[:-4]
+            elif len(parts) >= 5 and parts[-1].isdigit() and len(parts[-1]) >= 4:
+                # Poslední token obsahuje 4 číslice slepené dohromady
+                last_token = parts[-1]
+                secret_code = [int(ch) for ch in last_token[:4]]
+                parts = parts[:-1]
+
             current_round_num = int(parts[2])
             game_state = int(parts[-1]) if parts[-1].isdigit() else 0
 
             # Pokud poslední položka není číslo stavu, ale jméno protihráče, získej jej z konce
             if not parts[-1].isdigit() and len(parts) >= 5:
                 self.other_player_name = parts[-1]
-                # Stav hry by pak měl být v předposlední položce
                 game_state = int(parts[-2]) if parts[-2].isdigit() else 0
-            
-            self._initialize_rounds() 
-            
+
+            self._initialize_rounds()
+
             # Očekáváme, že poslední prvek je buď stav, nebo jméno; předposlední pak stav
             round_data_parts = parts[3:-2] if len(parts) > 5 else (parts[3:-1] if len(parts) > 4 else [])
-            
+
             for i, round_str in enumerate(round_data_parts):
-                if len(round_str) < 4: 
+                if len(round_str) < 4:
                     continue
-                
+
                 guesses_str = round_str[:-2]
                 try:
                     blacks = int(round_str[-2])
                     whites = int(round_str[-1])
                 except (ValueError, IndexError):
                     continue
-                
+
                 if i < len(self.rounds):
                     round_obj = self.rounds[i]
                 else:
                     round_obj = RoundInfo(i, self.num_pegs)
                     self.rounds.append(round_obj)
-                
+
                 guesses_list = [int(ch) for ch in guesses_str if ch.isdigit()][:self.num_pegs]
-                
+
                 round_obj.guesses = [guesses_list]
                 round_obj.evaluations = [(blacks, whites)]
-            
+
             self.currentRoundNumber = current_round_num
-            
+
+            # Pokud máme tajnou kombinaci a jsme evaluator, ulož ji pro zobrazení.
+            if secret_code and self.role == 1:
+                # Ořízni/padni na počet pegs
+                self.input_values = secret_code[:self.num_pegs]
+
         except Exception as e:
             print(f"Chyba při parsování reconnect dat: {e}")
-        
+
         return game_state
 
     def showInputPanel(self, role):
@@ -624,7 +646,12 @@ class LogikApp:
         self._input_panel_initialized = False
         self.is_evaluator_mode = (role == 'evaluator')
         self.current_palette = self.palette
-        self.input_values = [6] * self.num_pegs
+        # Guesser vždy začíná s prázdnými sloty
+        # Evaluator zachová input_values jen pokud nejsou všechny prázdné (např. po reconnectu máme tajnou kombinaci)
+        if role == 'guesser':
+            self.input_values = [6] * self.num_pegs
+        elif not hasattr(self, 'input_values') or not self.input_values or all(v == 6 for v in self.input_values):
+            self.input_values = [6] * self.num_pegs
         self.input_slot_ids = []
         self.input_sent = False
 
@@ -1264,7 +1291,7 @@ class LogikApp:
     
     def reconnectMonitor(self):
         """Monitoruje stav připojení a pokouší se o reconnect"""
-        retry_delay = 2.0
+        retry_delay = 1.0
         while self.isRunning:
             if self.reconnecting:
                 ref = self.last_online if isinstance(self.last_online, (int, float)) else time.time()

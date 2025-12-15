@@ -162,6 +162,7 @@ ConnectClientState Server::handleReconnect(ReconnectMessage rm, int clientSocket
                 rm.roundNumber = game->roundNumber;
                 rm.state = static_cast<int>(game->lastValidState);
                 rm.otherPlayerName = game->playerE.name;
+                rm.secretColors = game->chosenColors;
             }
             if(game->playerE.name == rm.name && game->playerE.role == rm.role && game->playerE.isValid == false && game->isRunning){
                 std::cout << "Nastavuji nový socket pro hráče E při reconnectu." << std::endl;
@@ -175,6 +176,7 @@ ConnectClientState Server::handleReconnect(ReconnectMessage rm, int clientSocket
                 rm.roundNumber = game->roundNumber;
                 rm.state = static_cast<int>(game->lastValidState);
                 rm.otherPlayerName = game->playerG.name;
+                rm.secretColors = game->chosenColors;
             }
         }
     }
@@ -498,6 +500,11 @@ int main(int argc, char* argv[]){
 
     int roomCount = std::stoi(argv[1]);
     int port = std::stoi(argv[2]);
+    
+    if(port <= 0 || port > 65535){
+        std::cerr << "Neplatný port: " << port << std::endl;
+        return 1;
+    }
     std::string bindAddress = (argc >= 4) ? std::string(argv[3]) : std::string("0.0.0.0");
 
     Server server(bindAddress, port, roomCount);

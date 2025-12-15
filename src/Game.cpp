@@ -410,7 +410,7 @@ bool Game::manageMessageEvaluating(const std::string& message, bool guesser){
                 return false;
             }
         }
-        else if(roundNumber > MAX_ROUNDS - 1 && em.blacks != 4){
+        else if(roundNumber >= MAX_ROUNDS - 1 && em.blacks != 4){
             WinGameMessage wgm = WinGameMessage(false);
             if(!sendMessage(playerE.clientSocket, wgm.serialize())){
                 std::cout << "Chyba při odesílání WinGameMessage hráči E" << std::endl;
@@ -422,6 +422,7 @@ bool Game::manageMessageEvaluating(const std::string& message, bool guesser){
             }
         }
 
+        std::cout << "Kolo: " << roundNumber << std::endl;
         roundNumber++;
         gameState = GameState::Guessing;
         return true;

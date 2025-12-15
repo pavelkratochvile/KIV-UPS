@@ -197,6 +197,7 @@ public:
     int state;
     std::string name;
     std::string otherPlayerName;
+    std::array<Color, 4> secretColors;
     int role;
 };
 
