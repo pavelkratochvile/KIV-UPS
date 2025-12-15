@@ -191,11 +191,21 @@ void Game::checkPlayerTimeouts(){
 
 void Game::emptyRoom(){
     // Reset players to ensure server won't reuse sockets or consider them active
+    // DŮLEŽITÉ: Neresetuj lastSeen - musí zůstat pro správný timeout detekci!
+    std::cout << "⚠️  emptyRoom() volán - resetuji sockety, zachovávám lastSeen časy" << std::endl;
+    
     Player reset;
     reset.clientSocket = -1;
     reset.isValid = false;
-    reset.lastSeen = std::chrono::steady_clock::now();
+    
+    // Zachovej původní lastSeen time pro oba hráče
+    auto playerELastSeen = this->playerE.lastSeen;
+    auto playerGLastSeen = this->playerG.lastSeen;
+    
+    reset.lastSeen = playerELastSeen;
     this->playerE = reset;
+    
+    reset.lastSeen = playerGLastSeen;
     this->playerG = reset;
 }
 

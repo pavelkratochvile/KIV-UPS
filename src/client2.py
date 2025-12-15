@@ -223,7 +223,9 @@ class LogikApp:
         try:
             print(f"[DEBUG] Připojuji se na {self.host}:{self.port} (typ: {type(self.host)}, {type(self.port)})")
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket.settimeout(30.0)  # Dlouhý timeout jen na connect (pomalá síť, firewall)
             self.socket.connect((self.host, self.port))
+            self.socket.settimeout(10.0)  # Po připojení: krátký timeout pro citlivost na odpojení
             print(f"[DEBUG] Připojení úspěšné!")
             self.connected = True
             return True
@@ -1274,7 +1276,9 @@ class LogikApp:
         """Pokus o reconnect k serveru v Game fázi."""
         try:
             new_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            new_socket.connect((self.host, self.port)) 
+            new_socket.settimeout(5.0)  # KRÁTKÝ timeout na reconnect (aby reconnectMonitor neblokoval)
+            new_socket.connect((self.host, self.port))
+            new_socket.settimeout(10.0)  # Po připojení: krátký timeout 
             
             reconnect_msg = f"{self.GAME_PREFIX}:RECONNECT_REQUEST:{self.name}:{self.role}"
             sendMessage(new_socket, reconnect_msg.encode())
