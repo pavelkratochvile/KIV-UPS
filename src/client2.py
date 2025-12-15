@@ -566,108 +566,61 @@ class LogikApp:
             pass
 
     def parseAndAttachReconnectData(self, data):
-        """Parsuje data po reconnectu a obnovuje herní stav.
-        
-        Nově: na konci mohou být 4 int hodnoty tajné kombinace. Pokud jsme evaluator (role 1),
-        uložíme je do input_values pro zobrazení tajné kombinace.
+        """Parsuje data po reconnectu a obnovuje herní stav podle aktuálního formátu serveru.
+
+        Formát zprávy (DELIM=':'):
+        LK:RECONNECT_CONFIRM:<round>:(round0)...:(round9):<state>:<otherPlayerName>:(secretDigits)
+        - (roundX) je řetězec 6 číslic: 4 pro tip + 2 pro blacks/whites
+        - secretDigits = 4 číslice 0-5 (bez dalšího delimiteru)
         """
-        print(f"Parsuji reconnect data: {data}")
         try:
             parts = data.split(":")
-            if len(parts) < 4 or parts[1] != "RECONNECT_CONFIRM":
+            if len(parts) < 7 or parts[0] != self.GAME_PREFIX or parts[1] != "RECONNECT_CONFIRM":
                 return 0
-            
-            # Pokud na konci dorazily barvy tajné kombinace, odřízneme je.
-            # Podporujeme dvě podoby:
-            # 1) Původní formát: 4 číslice v jednom tokenu (např. "0123")
-            # 2) Nový formát: 4 samostatné tokeny oddělené DELIM
-            secret_code = None
-            if len(parts) >= 7 and all(p.isdigit() and len(p) == 1 for p in parts[-4:]):
-                secret_code = [int(p) for p in parts[-4:]]  # 4 oddělené tokeny
-                parts = parts[:-4]
-            elif len(parts) >= 5 and parts[-1].isdigit() and len(parts[-1]) >= 4:
-                # Poslední token obsahuje 4+ číslic slepených dohromady
-                last_token = parts[-1]
-                secret_code = [int(ch) for ch in last_token[:4]]
-                parts = parts[:-1]
-            
-            current_round_num = int(parts[2])
-            game_state = int(parts[-1]) if parts[-1].isdigit() else 0
 
-            # Pokud poslední položka není číslo stavu, ale jméno protihráče, získej jej z konce
-            if not parts[-1].isdigit() and len(parts) >= 5:
-                self.other_player_name = parts[-1]
-                # Stav hry by pak měl být v předposlední položce
-                game_state = int(parts[-2]) if parts[-2].isdigit() else 0
-            
-            self._initialize_rounds() 
-            
-            # Očekáváme, že poslední prvek je buď stav, nebo jméno; předposlední pak stav
-            round_data_parts = parts[3:-2] if len(parts) > 5 else (parts[3:-1] if len(parts) > 4 else [])
-            
+            # Základní pole
+            current_round_num = int(parts[2])
+            secret_token = parts[-1] if len(parts) >= 1 else ""
+            other_name = parts[-2] if len(parts) >= 2 else ""
+            state_token = parts[-3] if len(parts) >= 3 else "0"
+
+            # Stav hry
+            game_state = int(state_token) if state_token.isdigit() else 0
+            self.other_player_name = other_name
+
+            # Parsování kol (vše mezi indexem 3 a indexem -3)
+            self._initialize_rounds()
+            round_data_parts = parts[3:-3] if len(parts) > 6 else []
             for i, round_str in enumerate(round_data_parts):
-                if len(round_str) < 4: 
+                if not round_str or len(round_str) < 2:
                     continue
-                
                 guesses_str = round_str[:-2]
                 try:
                     blacks = int(round_str[-2])
                     whites = int(round_str[-1])
-                except (ValueError, IndexError):
+                except Exception:
                     continue
-                
+
+                guesses_list = [int(ch) for ch in guesses_str if ch.isdigit()][:self.num_pegs]
                 if i < len(self.rounds):
                     round_obj = self.rounds[i]
                 else:
                     round_obj = RoundInfo(i, self.num_pegs)
                     self.rounds.append(round_obj)
-                
-                guesses_list = [int(ch) for ch in guesses_str if ch.isdigit()][:self.num_pegs]
-                
                 round_obj.guesses = [guesses_list]
                 round_obj.evaluations = [(blacks, whites)]
-            
+
             self.currentRoundNumber = current_round_num
-            
-            # Pokud máme tajnou kombinaci a jsme evaluator, ulož ji pro zobrazení.
-            # Ale jen pokud obsahuje opravdové barvy (0-5), ne default hodnoty.
-            if secret_code and self.role == 1:
-                # Zkontroluj, zda secret_code obsahuje alespoň jednu opravdovou barvu (0-5)
-                has_real_colors = any(0 <= c <= 5 for c in secret_code[:self.num_pegs])
-                if has_real_colors:
+
+            # Tajná kombinace v posledním tokenu jako 4 číslice 0-5
+            if isinstance(secret_token, str) and len(secret_token) >= 4 and all(ch in "012345" for ch in secret_token[:4]):
+                secret_code = [int(ch) for ch in secret_token[:4]]
+                if self.role == 1:
                     self.input_values = secret_code[:self.num_pegs]
-                    print(f"[DEBUG] Secret code nastaven: {self.input_values}")
-                else:
-                    print(f"[DEBUG] Secret code obsahuje jen default hodnoty, ignoruji.")
-            
-            # Robustní odhad stavu hry při rychlém reconnectu (např. vytažení kabelu)
-            # Pokud server vrátil zastaralý stav (0), dopočítej jej z rozložených dat kol.
-            # ALE: Neinferuj, pokud secret_code neobsahuje opravdové barvy (evaluator ještě nevybral).
-            try:
-                if game_state == 0:
-                    inferred_state = 0
-                    # Máme tajnou kombinaci s opravdovými barvami? -> minimálně stav Guessing (1)
-                    if self.role == 1 and secret_code:
-                        has_real_colors = any(0 <= c <= 5 for c in secret_code[:self.num_pegs])
-                        if has_real_colors:
-                            inferred_state = max(inferred_state, 1)
-                    # Zkontroluj aktuální kolo – pokud je v něm reálný tip a zatím žádné hodnocení,
-                    # jsme ve stavu Evaluating (2)
-                    if 0 <= self.currentRoundNumber < len(self.rounds):
-                        cur = self.rounds[self.currentRoundNumber]
-                        has_real_guess = any((v is not None and 0 <= int(v) <= 5) for v in (cur.guesses[-1] if cur.guesses else [])) and not all(int(v) == 6 for v in (cur.guesses[-1] if cur.guesses else []))
-                        has_eval = bool(cur.evaluations) and (int(cur.evaluations[-1][0]) + int(cur.evaluations[-1][1]) > 0)
-                        if has_real_guess and not has_eval:
-                            inferred_state = max(inferred_state, 2)
-                    if inferred_state > 0:
-                        game_state = inferred_state
-                        print(f"[DEBUG] Stav inferován z 0 na {game_state}")
-            except Exception as e:
-                print(f"[DEBUG] Chyba při inference stavu: {e}")
-            
+
         except Exception as e:
             print(f"Chyba při parsování reconnect dat: {e}")
-        
+
         return game_state
 
     def showInputPanel(self, role):
@@ -679,12 +632,7 @@ class LogikApp:
         self._input_panel_initialized = False
         self.is_evaluator_mode = (role == 'evaluator')
         self.current_palette = self.palette
-        # Guesser vždy začíná s prázdnými sloty
-        # Evaluator zachová input_values jen pokud nejsou všechny prázdné (např. po reconnectu máme tajnou kombinaci)
-        if role == 'guesser':
-            self.input_values = [6] * self.num_pegs
-        elif not hasattr(self, 'input_values') or not self.input_values or all(v == 6 for v in self.input_values):
-            self.input_values = [6] * self.num_pegs
+        self.input_values = [6] * self.num_pegs
         self.input_slot_ids = []
         self.input_sent = False
 
@@ -729,17 +677,6 @@ class LogikApp:
             self.input_reset_btn.pack(pady=3)
 
             self._input_panel_initialized = True
-            
-            # Pokud existují předvyplněné hodnoty (např. po reconnectu), vykresli je
-            for i in range(self.num_pegs):
-                if hasattr(self, 'input_values') and i < len(self.input_values):
-                    val = self.input_values[i]
-                    if val != 6 and 0 <= val < len(self.current_palette):
-                        oid = self.input_slot_ids[i]
-                        fill_color = self.current_palette[val]
-                        outline = "#7a7a7a"
-                        self.input_canvas.itemconfig(oid, fill=fill_color, outline=outline)
-            
             self._update_input_submit_enabled()
 
         except Exception as e:
