@@ -90,7 +90,7 @@ bool recvMessage(int sock, std::string& out) {
     uint32_t length = std::stoi(lenStr);
     if (length > MAX_SIZE) return false;
 
-    // 3) payload = první přečtený znak + zbytek
+    // payload = první přečtený znak + zbytek
     out.reserve(length);
     out.push_back(ch);
 

@@ -29,7 +29,6 @@ class LogikApp:
         try:
             self.style.theme_use('clam')
         except tk.TclError:
-             # Pokud clam není dostupný
             pass
         
         # Centrování okna
@@ -50,7 +49,6 @@ class LogikApp:
         self.input_values = None 
         self.other_player_name = None
         
-        # --- HERNÍ STAV ---
         self.isRunning = False
         self.isPaused = False
         # Vylepšená paleta barev s lepším kontrastem
@@ -70,7 +68,7 @@ class LogikApp:
         self._input_panel_initialized = False
         
         # Vytvoření hlavního rámečku
-        self.main_container = tk.Frame(self.master, bg="#fcfcfc") # Světlejší pozadí
+        self.main_container = tk.Frame(self.master, bg="#fcfcfc")
         self.main_container.pack(fill=tk.BOTH, expand=True)
         
         # Spuštění
@@ -91,10 +89,6 @@ class LogikApp:
         self.rounds = []
         for i in range(10):
             self.rounds.append(RoundInfo(i, self.num_pegs))
-
-    # =========================================================================
-    # Přepínání UI zobrazení (Login, Lobby, Game)
-    # =========================================================================
 
     def _clear_frame(self):
         """Vymaže všechny widgety z hlavního kontejneru."""
@@ -160,7 +154,6 @@ class LogikApp:
         self.game_frame.pack(fill=tk.BOTH, expand=True)
         self.current_frame = self.game_frame 
 
-        # --- Top Panel (Status, Info, Presence) ---
         self.top_frame = tk.Frame(self.game_frame, bg="#ffffff", bd=1, relief=tk.FLAT, padx=10, pady=5)
         self.top_frame.pack(side=tk.TOP, fill=tk.X)
         
@@ -170,27 +163,27 @@ class LogikApp:
         role_text = "Hodnotitel" if self.role == 1 else "Tipující"
         tk.Label(self.top_frame, text=f"Hráč: {self.name} | Role: {role_text}", font=("Helvetica", 10), bg="#ffffff").pack(pady=2)
 
+        
         # Testovací tlačítko: pošli záměrně vadnou zprávu serveru
-        test_btn = ttk.Button(self.top_frame, text="Odeslat vadnou zprávu", command=self.send_bad_message)
-        test_btn.pack(pady=5)
+        # test_btn = ttk.Button(self.top_frame, text="Odeslat vadnou zprávu", command=self.send_bad_message)
+        # test_btn.pack(pady=5)
 
         # Presence Bar
         self.buildPresenceBar(self.top_frame)
 
-        # --- Evaluator Secret Combination Display ---
         self.secret_frame = tk.Frame(self.game_frame, bg="#fcfcfc")
         if self.role == 1:
             self.secret_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
-            # Vylepšené vykreslení tajné kombinace
+            # Vykreslení tajné kombinace
             self.secret_canvas = tk.Canvas(self.secret_frame, width=250, height=40, bg="#fcfcfc", highlightthickness=0)
             self.secret_canvas.pack(side=tk.LEFT, padx=150)
             tk.Label(self.secret_frame, text="Tajná kombinace:", font=("Arial", 9, "bold"), bg="#fcfcfc").pack(side=tk.LEFT, padx=5)
 
-        # --- Input Panel ---
+        # Input Panel
         self.input_frame = tk.Frame(self.game_frame, bg="#ffffff", bd=1, relief=tk.RIDGE, padx=10, pady=10)
         self.input_frame.pack(side=tk.TOP, fill=tk.X, pady=5, padx=10)
 
-        # --- Board Frame (Scrollable) ---
+        # Board Frame (Scrollable)
         self.board_frame = tk.Frame(self.game_frame, bg="#fcfcfc")
         self.board_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         
@@ -219,10 +212,6 @@ class LogikApp:
         except Exception as e:
             print("[TEST] Nepodařilo se odeslat vadnou zprávu:", e)
             self.updateStatus("Chyba při odesílání vadné zprávy.", "#e6194b")
-
-    # =========================================================================
-    # Komunikace a stav serveru
-    # =========================================================================
 
     def connect_to_server(self):
         try:
@@ -375,10 +364,6 @@ class LogikApp:
             self.showEvaluationPanel(guess_str)
             self.updateStatus("Protihráč tipoval! Ohodnoť jeho tip.", "#3cb44b")
 
-    # =========================================================================
-    # Lobby logika
-    # =========================================================================
-
     def choose_room(self):
         """Pošle REQUEST_ROOMS a zobrazí seznam místností."""
         try:
@@ -439,7 +424,6 @@ class LogikApp:
         
         self.master.bind_all("<MouseWheel>", lambda event: canvas.yview_scroll(int(-1 * (event.delta / 120)), "units"))
 
-        # === TLAČÍTKA PRO MÍSTNOSTI (ttk.Button) ===
         for room_id in rooms_list:
             btn = ttk.Button(
                 scrollable_frame,
@@ -513,10 +497,6 @@ class LogikApp:
         except Exception as e:
             self.updateStatus(f"⚠️ Chyba při čekání na start hry: {e}", "#e6194b")
             self.master.after(1000, self.on_close)
-
-    # =========================================================================
-    # Herní logika a UI (integrováno z GameSecond.py)
-    # =========================================================================
 
     def buildPresenceBar(self, parent_frame):
         """Vykreslí indikátory online/offline pro mě i protihráče."""
@@ -1048,10 +1028,6 @@ class LogikApp:
         inner_frame.update_idletasks()
         canvas.config(scrollregion=canvas.bbox("all"))
 
-    # =========================================================================
-    # Různé a pomocné funkce (Client/Game)
-    # =========================================================================
-
     def updateStatus(self, text, color):
         """Aktualizace statusu v GUI (thread-safe)"""
         self.update_status_safely(self.status_label, text, color)
@@ -1108,10 +1084,6 @@ class LogikApp:
             sys.exit(0)
         except SystemExit:
             os._exit(0)
-
-    # =========================================================================
-    # Game - Komunikační Vlákna
-    # =========================================================================
 
     def recvMessageThread(self):
         """Hlavní smyčka pro příjem zpráv od serveru"""
@@ -1337,8 +1309,6 @@ class LogikApp:
         self.input_values = None
         
         self.master.after(0, self.show_lobby)
-
-# --- SPoušTěCÍ LOGIKA ---
 
 def main():
     if len(sys.argv) < 2:

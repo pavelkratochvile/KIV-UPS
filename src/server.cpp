@@ -34,11 +34,11 @@ Server::Server(const std::string& bindAddress, int port, int roomCount) : bindAd
 
 void Server::removePlayerFromRoom(int clientSocket) {
     for (auto& game : this->gameRooms) {
-        // Idempotentní - kontroluj jestli socket ještě není 0
+        // kontroluj jestli socket ještě není 0
         if(game->playerG.clientSocket == clientSocket && clientSocket != 0){
             std::cout << "odstraňuji G z roomky" << std::endl;
             game->playerG.isValid = false;
-            // Zajisti že se hra nespustí znovu pokud ještě běží timeout thread
+            // hra se nespustí znovu pokud ještě běží timeout thread
             game->playerG = Player();
             
             // Pokud je místnost prázdná, resetuj isRunning aby se mohla spustit znovu
@@ -71,7 +71,7 @@ void Server::handleClient(int clientSocket, ConnectClientState state) {
             closeAndKickClient(clientSocket);
             return;
         }
-
+        // podle stavu zavolej správnou obslužnou metodu
         if(stateHandlers.find(state) != stateHandlers.end()){
             state = stateHandlers[state](message, clientSocket);
         } 
@@ -81,10 +81,12 @@ void Server::handleClient(int clientSocket, ConnectClientState state) {
             return;
         }
 
+        // zkontroluj jestli nedošlo k odpojení
         if(state == ConnectClientState::Disconnect){
             closeAndKickClient(clientSocket);
             return;
         }
+        // pokud je stav Ready, klient dokončil handshake
         if(state == ConnectClientState::Ready){
             break;
         }
@@ -102,7 +104,7 @@ ConnectClientState Server::handleLoginAndReconnect(const std::string& message, c
     LoginMessage lm = LoginMessage(parts);
     ReconnectMessage rm = ReconnectMessage(parts);
     ConnectClientState state;
-    
+    // rozhodni podle prefixu jaký typ zprávy to je
     if(parts[1] == START_LOGIN_PREFIX){
         state = this->handleLogin(lm, clientSocket);
     }
@@ -122,6 +124,7 @@ ConnectClientState Server::handleLogin(LoginMessage lm, int clientSocket){
         return ConnectClientState::Disconnect;
     }
 
+    // Přidej hráče do seznamu aktivních hráčů
     Player newPlayer = Player(clientSocket);
     newPlayer.name = std::string(lm.parts[2]);
     newPlayer.role = std::stoi(lm.parts[3]);
@@ -148,6 +151,7 @@ ConnectClientState Server::handleReconnect(ReconnectMessage rm, int clientSocket
 
     std::cout << "Reconnect zpráva odeslána zpět klientovi." << std::endl;
     {
+        // prohledej všechny herní místnosti a najdi odpovídajícího hráče
         std::lock_guard<std::mutex> lock(rooms_mutex);
         for(auto& game : gameRooms) {
             if(game->playerG.name == rm.name && game->playerG.role == rm.role && game->playerG.isValid == false && game->isRunning){
@@ -191,6 +195,7 @@ ConnectClientState Server::handleReconnect(ReconnectMessage rm, int clientSocket
     }
 }
 
+// Vrátí seznam místností v lobby
 ConnectClientState Server::handleLobbyRequest(const std::string& message, const int& clientSocket){
     std::vector<std::string> parts = parseMessage(message);
     if(parts.size() < 2){
@@ -205,11 +210,16 @@ ConnectClientState Server::handleLobbyRequest(const std::string& message, const 
         }
     }
     
+    // Vytvoř a odešli RoomListMessage
+
     RoomListMessage rlm = RoomListMessage(parts, roomList);
     if(!rlm.evaluate()){
         closeAndKickClient(clientSocket);
         return ConnectClientState::Disconnect;
     }
+
+
+    // Odešli zprávu klientovi
 
     if(!sendMessage(clientSocket, rlm.serialize())){
         closeAndKickClient(clientSocket);
@@ -235,16 +245,19 @@ ConnectClientState Server::handleRoomRequest(const std::string& message, const i
         std::lock_guard<std::mutex> lock(rooms_mutex);
         for(auto& game : gameRooms) {
             if(game->gameID == roomID) {
+                // Zkontroluj, zda hra již neběží nebo zda je role již obsazena
                 if(game->isRunning) {
                     sendMessage(clientSocket, remf.serialize());
                     std::cout << "Game is running, cant join room." << std::endl;
                     return ConnectClientState::Login;
                 }
+                // Zkontroluj, zda role již není obsazena
                 if(role == 0 && game->playerG.isValid){
                     sendMessage(clientSocket, remf.serialize());
                     std::cout << "Cant join as player G" << std::endl;
                     return ConnectClientState::Login;
                 }
+                // Zkontroluj, zda role již není obsazena
                 else if(role == 1 && game->playerE.isValid){
                     sendMessage(clientSocket, remf.serialize());
                     std::cout << "Cant join as player E" << std::endl;
@@ -264,6 +277,7 @@ ConnectClientState Server::handleRoomRequest(const std::string& message, const i
             if(game->gameID == roomID) {
                 Player joiningPlayer;
                 {
+                    // Najdi hráče v activePlayers a odstraň ho odtamtud
                     std::lock_guard<std::mutex> pl_lock(players_mutex);
                     for(int i = 0; i < activePlayers.size(); ++i) {
                         if (activePlayers[i].clientSocket == clientSocket) {
@@ -306,6 +320,7 @@ ConnectClientState Server::handleRoomRequest(const std::string& message, const i
     return ConnectClientState::Ready;
 }
 
+// Rozdělí zprávu na části podle ':' a vrátí je jako vektor řetězců
 std::vector<std::string> Server::parseMessage(const std::string& message){
     char delimiter = ':';
     size_t pos = 0;
@@ -433,7 +448,8 @@ int Server::runServer(){
 
     if(this->bindAddress == "0.0.0.0" || this->bindAddress == "any"){
         addr.sin_addr.s_addr = INADDR_ANY;
-    } else {
+    } 
+    else {
         if(inet_pton(AF_INET, this->bindAddress.c_str(), &addr.sin_addr) != 1){
             std::cerr << "Neplatná bind adresa: " << this->bindAddress << std::endl;
             return 1;
@@ -505,6 +521,7 @@ int main(int argc, char* argv[]){
         std::cerr << "Neplatný port: " << port << std::endl;
         return 1;
     }
+    
     std::string bindAddress = (argc >= 4) ? std::string(argv[3]) : std::string("0.0.0.0");
 
     Server server(bindAddress, port, roomCount);

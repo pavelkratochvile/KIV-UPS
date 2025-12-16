@@ -20,12 +20,10 @@ def recv_exact(sock, n: int) -> bytes:
 
 
 def recvMessage(sock):
-    # 1) PREFIX ML
     prefix = recv_exact(sock, 2).decode()
     if prefix != "ML":
         raise ValueError(f"Invalid message prefix: {prefix}")
 
-    # 2) Načíst délku - nevíme dopředu kolik číslic
     length_str = ""
 
     while True:
@@ -49,7 +47,6 @@ def recvMessage(sock):
     if length > MAX_SIZE:
         raise ValueError("Message too large")
 
-    # už máme 1 byte payloadu načtený
     payload = first_payload_byte
     if length > 1:
         payload += recv_exact(sock, length - 1)
