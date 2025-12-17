@@ -1,12 +1,6 @@
-#include<iostream>
-#include <cstdint>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <sys/socket.h>
-#include <errno.h>
-#include <string>
+/*Veškerý popis jednotlivých metod je v hlavičkovém souboru SocketLib.hpp*/
 
-static const uint32_t MAX_SIZE = 10 * 1024 * 1024;
+#include "SocketLib.hpp"
 
 ssize_t readAll(int sock, void* buf, size_t count){
     char* p = (char*)buf;
@@ -39,6 +33,7 @@ ssize_t writeAll(int sock, const void* buf, size_t count){
     return count;
 }
 
+/*Metoda pošle zprávu přes socket s prefixem "ML" a délkou zprávy. Tato funkce je obalová, tudíž nemusíme při volání řešit přidání ML a délky.*/
 bool sendMessage(int sock, const std::string& payload) {
     uint32_t length = payload.size();
     if (length > MAX_SIZE) return false;
@@ -54,11 +49,10 @@ bool sendMessage(int sock, const std::string& payload) {
     return true;
 }
 
-
 bool recvMessage(int sock, std::string& out) {
     out.clear();
 
-    // 1) Přijmout prefix "ML"
+    /* Tady přijmeme prefix "ML" */
     char prefix[2];
     if (readAll(sock, prefix, 2) != 2)
         return false;
@@ -68,11 +62,11 @@ bool recvMessage(int sock, std::string& out) {
         return false;
     }
 
-    // 2) Číst textovou délku (neznámý počet znaků)
+    /*Čte textovou délku (neznámý počet znaků)*/
     std::string lenStr;
     char ch;
 
-    // čteme dokud nenarazíme na znak, který není číslice
+    /*čteme dokud nenarazíme na znak, který není číslice*/
     while (true) {
         ssize_t r = read(sock, &ch, 1);
         if (r <= 0) return false;
@@ -80,7 +74,7 @@ bool recvMessage(int sock, std::string& out) {
         if (std::isdigit(ch)) {
             lenStr.push_back(ch);
         } else {
-            // narazili jsme na první znak payloadu
+            /*Narazili jsme na první znak payloadu*/
             break;
         }
     }

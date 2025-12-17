@@ -5,7 +5,7 @@
 #include <mutex>
 #include "Player.hpp"
 
-// Jednoduchá struktura pro ukládání informací o kolech (bez závislosti na Game.hpp)
+/*Jednoduchá struktura pro ukládání informací o kolech (bez závislosti na Game.hpp)*/
 class RoundInfo{
 public:
     RoundInfo();
@@ -15,7 +15,7 @@ public:
     int whites;
 };
 
-// Define Color enum here so messages and other modules can use it without circular includes
+/*Pomocný enum pro barvy*/
 enum class Color{
     Red = 0,
     Green = 1,
@@ -25,6 +25,7 @@ enum class Color{
     Purple = 5
 };
 
+/*Prefixy. Detailně budou vysvětleny v dokumentaci (Nachází se ve složce doc)*/
 inline constexpr const char* GAME_PREFIX = "LK";
 
 inline constexpr const char* LOGIN_PREFIX = "LOGIN_SUCCESS";
@@ -74,23 +75,23 @@ const int WIN_GAME_PARTS_LENGTH = 2;
 const int RECONNECT_OTHER_PLAYER_PARTS_LENGTH = 2;
 
 
-
+/**
+ * Šablona základní třídy pro zprávy
+ */
 class Message {
 public:
     virtual ~Message() = default;
-
     virtual std::string serialize() const = 0;
     virtual bool evaluate() { return true; }
 };
 
-
 // -------------------------------------------------
 // LoginMessage
+// - Zpráva pro přihlášení hráče
 // -------------------------------------------------
 class LoginMessage : public Message {
 public:
     LoginMessage(std::vector<std::string>& parts);
-
     std::string serialize() const override;
     bool evaluate() override;
     std::vector<std::string> parts;
@@ -103,14 +104,13 @@ private:
 
 // -------------------------------------------------
 // RoomListMessage
+// - Zpráva pro seznam místností v lobby
 // -------------------------------------------------
 class RoomListMessage : public Message {
 public:
     RoomListMessage(std::vector<std::string>& parts, std::vector<std::string>& roomList);
-
     std::string serialize() const override;
     bool evaluate() override;
-
 private:
     std::vector<std::string> roomList;
     std::vector<std::string> parts;
@@ -119,13 +119,13 @@ private:
 
 // -------------------------------------------------
 // RoomEntryMessage
+// - Zpráva pro vstup do místnosti
 // -------------------------------------------------
 class RoomEntryMessage : public Message {
 public:
     RoomEntryMessage(std::vector<std::string>& parts, bool type);
     std::string serialize() const override;
     bool evaluate() override;
-
 private:
     std::vector<std::string> parts;
     bool type;
@@ -133,11 +133,11 @@ private:
 
 // -------------------------------------------------
 // GameStartMessage
+// - Zpráva pro start hry
 // -------------------------------------------------
 class GameStartMessage : public Message {
 public:
-    GameStartMessage(std::string otherPlayerName);  // Pro vytváření na serveru
-
+    GameStartMessage(std::string otherPlayerName); 
     std::string serialize() const override;
     bool evaluate() override;
     std::vector<std::string> parts;
@@ -146,6 +146,7 @@ public:
 
 // -------------------------------------------------
 // HeartBeatMessage
+// - Zpráva pro udržení spojení
 // -------------------------------------------------
 class HeartBeatMessage : public Message {
 public:
@@ -158,10 +159,12 @@ public:
 
 // -------------------------------------------------
 // Permanent disconnect message
+// - Zpráva pro trvalé odpojení hráče
 // -------------------------------------------------
 class PermanentDisconnectMessage : public Message {
 public:
     PermanentDisconnectMessage(Player& disconnectedPlayer);
+    PermanentDisconnectMessage(std::vector<std::string>& parts);
     std::string serialize() const override;
     bool evaluate() override;
     std::vector<std::string> parts;
@@ -170,10 +173,12 @@ public:
 
 // -------------------------------------------------
 // Temporary disconnect message
+// - Zpráva pro dočasné odpojení hráče
 // -------------------------------------------------
 class TemporaryDisconnectMessage : public Message {
 public:
     TemporaryDisconnectMessage(Player& disconnectedPlayer);
+    TemporaryDisconnectMessage(std::vector<std::string>& parts);
     std::string serialize() const override;
     bool evaluate() override;
     std::vector<std::string> parts;
@@ -182,6 +187,7 @@ public:
 
 // -------------------------------------------------
 // Reconnect message
+// - Zpráva pro reconnect hráče
 // -------------------------------------------------
 class ReconnectMessage : public Message {
 public:
@@ -203,6 +209,7 @@ public:
 
 // -------------------------------------------------
 // ChoosingColorsMessage message
+// - Zpráva pro výběr barev hádačem
 // -------------------------------------------------
 class ChoosingColorsMessage : public Message {
 public:    
@@ -217,6 +224,7 @@ public:
 
 // -------------------------------------------------
 // GuessingColorsMessage message
+// - Zpráva pro hádání barev ohodnocovačem
 // -------------------------------------------------
 class GuessingColorsMessage : public Message {
 public:    
@@ -231,6 +239,7 @@ public:
 
 // -------------------------------------------------
 // EvaluationMessage message
+// - Zpráva pro hodnocení hádání ohodnocovačem
 // -------------------------------------------------
 class EvaluationMessage : public Message {
 public:    
@@ -246,6 +255,7 @@ public:
 
 // -------------------------------------------------
 // WinGameMessage message
+// - Zpráva při ukončení hry, posílá se jak výherci tak poraženému
 // -------------------------------------------------
 class WinGameMessage : public Message {
 public:
@@ -261,8 +271,8 @@ public:
 
 // -------------------------------------------------
 // ReconnectOtherPlayer message
+// - Zpráva pro reconnect druhého hráče
 // -------------------------------------------------
-
 class ReconnectOtherPlayerMessage : public Message {
 public:
     ReconnectOtherPlayerMessage();

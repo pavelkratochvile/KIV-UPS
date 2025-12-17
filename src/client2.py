@@ -9,22 +9,22 @@ import sys
 import os
 
 from SocketLib import sendMessage, recvMessage
+# Datová struktura pro jedno kolo hry
 class RoundInfo:
-    """Datová struktura pro uchování tipů a hodnocení jednoho kola."""
     def __init__(self, roundNumber, num_pegs=4):
-        self.roundNumber = roundNumber
-        # 6 = bílá / bez barvy - default hodnota
-        self.guesses = [[6] * num_pegs] 
+        self.roundNumber = roundNumber # Číslo kola
+        self.guesses = [[6] * num_pegs] # Defaultní prázdný tip (6 = žádná barva)
         self.evaluations = [] # List hodnocení
 
-
+# Hlavní aplikační třída klienta
 class LogikApp:
     def __init__(self, master, host, port):
+        
+        # Vytvoření hlavního okna
         self.master = master
         self.master.title("Mastermind Logik Klient")
         self.master.geometry("600x800")
         self.master.minsize(550, 750)
-        
         self.style = ttk.Style()
         try:
             self.style.theme_use('clam')
@@ -36,7 +36,7 @@ class LogikApp:
         
         self.master.protocol("WM_DELETE_WINDOW", self.on_close)
         
-        # --- KLIENTSKÝ STAV ---
+        # Klientské atributy při startu hry
         self.host = host
         self.port = port
         self.name = None
@@ -48,10 +48,8 @@ class LogikApp:
         self.reconnectData = None
         self.input_values = None 
         self.other_player_name = None
-        
         self.isRunning = False
         self.isPaused = False
-        # Vylepšená paleta barev s lepším kontrastem
         self.palette = ["#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "#911eb4"] # 6 barev (0-5)
         self.num_pegs = 4
         self.currentRoundNumber = 0 
@@ -62,7 +60,7 @@ class LogikApp:
         self.opponent_online = 1
         self.opponent_name = "Protihráč"
         
-        # --- UI PRVKY ---
+        # Prvky GUI
         self.current_frame = None
         self.status_label = None 
         self._input_panel_initialized = False
@@ -76,33 +74,32 @@ class LogikApp:
         self.connect_to_server()
         self.show_login()
 
+    # Centrování okna na obrazovce
     def _center_window(self, width, height):
-        """Centruje okno na obrazovce."""
         screen_width = self.master.winfo_screenwidth()
         screen_height = self.master.winfo_screenheight()
         x_position = int((screen_width / 2) - (width / 2))
         y_position = int((screen_height / 2) - (height / 2))
         self.master.geometry(f"{width}x{height}+{x_position}+{y_position}")
-        
+    
+    # Inicializace kol hry
     def _initialize_rounds(self):
-        """Inicializuje 10 prázdných kol pro novou hru."""
         self.rounds = []
         for i in range(10):
             self.rounds.append(RoundInfo(i, self.num_pegs))
 
+    # Vyčištění aktuálního rámce
     def _clear_frame(self):
-        """Vymaže všechny widgety z hlavního kontejneru."""
         if self.current_frame:
             self.current_frame.destroy()
         self.current_frame = None
 
+    # Vykreslení přihlašovací obrazovky
     def show_login(self):
         self._clear_frame()
         self.current_frame = tk.Frame(self.main_container, bg="#fcfcfc", padx=20, pady=20)
         self.current_frame.pack(fill=tk.BOTH, expand=True)
-
         tk.Label(self.current_frame, text="Přihlášení do hry Logik", font=("Helvetica", 20, "bold"), fg="#111111", bg="#fcfcfc").pack(pady=(50, 30))
-
         form_frame = tk.Frame(self.current_frame, bg="#ffffff", bd=1, relief=tk.RAISED, padx=40, pady=40)
         form_frame.pack(pady=15)
 
@@ -124,15 +121,15 @@ class LogikApp:
         btn_frame = tk.Frame(self.current_frame, bg="#fcfcfc")
         btn_frame.pack(pady=10)
         
+        # Při zmáčknutí jednotlivých tlačítek zavoláme příslušné metody
         ttk.Button(btn_frame, text="Přihlásit se", command=self.submit_login, style='Accent.TButton').pack(side=tk.LEFT, padx=15, ipadx=10, ipady=5)
-        
         ttk.Button(btn_frame, text="Obnovit hru (Reconnect)", command=lambda: self.handleReconnect(self.name_entry.get(), self.role_entry.get())).pack(side=tk.LEFT, padx=15, ipadx=10, ipady=5)
 
+    # Vykreslení lobby obrazovky
     def show_lobby(self):
         self._clear_frame()
         self.current_frame = tk.Frame(self.main_container, bg="#fcfcfc", padx=20, pady=20)
         self.current_frame.pack(fill=tk.BOTH, expand=True)
-
         tk.Label(self.current_frame, text="Herní Lobby", font=("Helvetica", 20, "bold"), fg="#111111", bg="#fcfcfc").pack(pady=(10, 20))
         
         # Status Label pro Lobby
@@ -146,10 +143,10 @@ class LogikApp:
         # Spustit načítání
         threading.Thread(target=self.choose_room, daemon=True).start()
 
+    # Vykreslení herní obrazovky
     def show_game(self, start_type='new'):
         self._clear_frame()
         self.isRunning = True
-        
         self.game_frame = tk.Frame(self.main_container, bg="#fcfcfc")
         self.game_frame.pack(fill=tk.BOTH, expand=True)
         self.current_frame = self.game_frame 
@@ -162,39 +159,31 @@ class LogikApp:
         
         role_text = "Hodnotitel" if self.role == 1 else "Tipující"
         tk.Label(self.top_frame, text=f"Hráč: {self.name} | Role: {role_text}", font=("Helvetica", 10), bg="#ffffff").pack(pady=2)
-
-        
-        # Testovací tlačítko: pošli záměrně vadnou zprávu serveru
-        # test_btn = ttk.Button(self.top_frame, text="Odeslat vadnou zprávu", command=self.send_bad_message)
-        # test_btn.pack(pady=5)
-
-        # Presence Bar
         self.buildPresenceBar(self.top_frame)
 
         self.secret_frame = tk.Frame(self.game_frame, bg="#fcfcfc")
+        
+        # Vykreslení tajné kombinace pro hodnotitele
         if self.role == 1:
             self.secret_frame.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
-            # Vykreslení tajné kombinace
             self.secret_canvas = tk.Canvas(self.secret_frame, width=250, height=40, bg="#fcfcfc", highlightthickness=0)
             self.secret_canvas.pack(side=tk.LEFT, padx=150)
             tk.Label(self.secret_frame, text="Tajná kombinace:", font=("Arial", 9, "bold"), bg="#fcfcfc").pack(side=tk.LEFT, padx=5)
 
-        # Input Panel
         self.input_frame = tk.Frame(self.game_frame, bg="#ffffff", bd=1, relief=tk.RIDGE, padx=10, pady=10)
         self.input_frame.pack(side=tk.TOP, fill=tk.X, pady=5, padx=10)
-
-        # Board Frame (Scrollable)
         self.board_frame = tk.Frame(self.game_frame, bg="#fcfcfc")
         self.board_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
         
         self.drawBoard()
-        
         if start_type == 'new' and self.role == 1:
             self.showInputPanel(role='evaluator')
         elif start_type == 'reconnect':
             pass
 
         self.last_online = time.time()
+
+        # Spuštění vláken pro příjem zpráv a monitorování reconnectu
         threading.Thread(target=self.recvMessageThread, daemon=True).start()
         threading.Thread(target=self.reconnectMonitor, daemon=True).start()
         try:
@@ -202,17 +191,7 @@ class LogikApp:
         except Exception:
             pass
 
-    def send_bad_message(self):
-        """Pošle záměrně vadnou zprávu serveru pro test jeho reakce."""
-        try:
-            msg = f"{self.GAME_PREFIX}:BAD_MESSAGE"
-            sendMessage(self.socket, msg.encode())
-            print("[TEST] Odeslána vadná zpráva:", msg)
-            self.updateStatus("Vadná zpráva odeslána.", "#f58231")
-        except Exception as e:
-            print("[TEST] Nepodařilo se odeslat vadnou zprávu:", e)
-            self.updateStatus("Chyba při odesílání vadné zprávy.", "#e6194b")
-
+    # Metoda pro připojení k serveru
     def connect_to_server(self):
         try:
             print(f"[DEBUG] Připojuji se na {self.host}:{self.port} (typ: {type(self.host)}, {type(self.port)})")
@@ -228,6 +207,7 @@ class LogikApp:
             self.connected = False
             return False
 
+    # Odeslání přihlašovacích údajů a zpracování odpovědi
     def submit_login(self):
         if not self.connected:
             self.login_status_label.config(text="Stav: Odpojeno od serveru.", fg="red")
@@ -248,9 +228,11 @@ class LogikApp:
         except ValueError:
             self.login_status_label.config(text="Role musí být 0 (Tipující) nebo 1 (Hodnotitel)!", fg="red")
             return
-            
+        
+        # Spuštění odeslání a příjmu v samostatném vlákně
         threading.Thread(target=self.send_and_receive_login, daemon=True).start()
 
+    # Odeslání přihlašovacích údajů a zpracování odpovědi
     def send_and_receive_login(self):
         try:
             STATE_PREFIX = "START_LOGIN"
@@ -262,22 +244,23 @@ class LogikApp:
             data = recvMessage(self.socket)
             if not data:
                 self.connected = False
-                self.update_status_safely(self.login_status_label, "❌ Server zavřel spojení.", "red")
+                self.update_status_safely(self.login_status_label, "Server zavřel spojení.", "red")
                 return
 
             data_str = data.decode()
 
             if self.evaluate_message(data_str, "LOGIN_SUCCESS", 4):
-                self.update_status_safely(self.login_status_label, "✅ Přihlášení úspěšné!", "#3cb44b")
+                self.update_status_safely(self.login_status_label, "Přihlášení úspěšné!", "#3cb44b")
                 self.master.after(500, self.show_lobby)
             else:
                 self.connected = False
-                self.update_status_safely(self.login_status_label, "❌ Přihlášení selhalo nebo server neodpovídá.", "#e6194b")
+                self.update_status_safely(self.login_status_label, "Přihlášení selhalo nebo server neodpovídá.", "#e6194b")
                 return
         except Exception as e:
             self.connected = False
-            self.update_status_safely(self.login_status_label, f"⚠️ Chyba při komunikaci: {e}", "#e6194b")
+            self.update_status_safely(self.login_status_label, f"Chyba při komunikaci: {e}", "#e6194b")
 
+    # Obsluha reconnectu
     def handleReconnect(self, name, role):
         if not self.connected:
             self.login_status_label.config(text="Stav: Odpojeno. Nelze reconnect.", fg="#e6194b")
@@ -301,6 +284,7 @@ class LogikApp:
             
         threading.Thread(target=self.send_and_receive_reconnect, daemon=True).start()
 
+    # Odeslání požadavku na reconnect a zpracování odpovědi
     def send_and_receive_reconnect(self):
         try:
             RECONNECT_PREFIX = "RECONNECT_REQUEST"
@@ -319,9 +303,8 @@ class LogikApp:
             
             if data and "RECONNECT_CONFIRM" in data:
                 self.reconnectData = data
-                # DŮLEŽITÉ: Resetneme isRunning aby se stará vlákna zastavila
                 self.isRunning = False
-                time.sleep(0.2)  # Počkej aby se vlákna zastavila
+                time.sleep(0.2)
                 self.master.after(0, self.continueGame)
             elif data and "RECONNECT_FAIL" in data:
                 self.update_status_safely(self.login_status_label, "❌ Obnovení připojení selhalo (hra neexistuje).", "#e6194b")
@@ -331,19 +314,22 @@ class LogikApp:
         
         except Exception as e:
             self.connected = False
-            self.update_status_safely(self.login_status_label, f"⚠️ Chyba reconnectu: {e}", "#e6194b")
+            self.update_status_safely(self.login_status_label, f"Chyba reconnectu: {e}", "#e6194b")
 
+    # Obnovení hry po reconnectu
     def continueGame(self):
         """Inicializuje GUI a obnovuje herní stav po reconnectu."""
         print(f"[{self.name}] Continuing game with reconnect data.")
         self.isRunning = True
         self.isPaused = False
         
+        # Parsuje data a obnoví herní stav
         game_state = self.parseAndAttachReconnectData(self.reconnectData)
         
         self.show_game(start_type='reconnect') 
         self.drawBoard() 
 
+        # Obnoví panely a status podle stavu hry
         if game_state == 0 and self.role == 1:
             self.showInputPanel(role='evaluator')
             self.updateStatus("Čekáš na tip protihráče.", color="#4363d8")
@@ -364,8 +350,8 @@ class LogikApp:
             self.showEvaluationPanel(guess_str)
             self.updateStatus("Protihráč tipoval! Ohodnoť jeho tip.", "#3cb44b")
 
+    # Výběr místnosti v lobby
     def choose_room(self):
-        """Pošle REQUEST_ROOMS a zobrazí seznam místností."""
         try:
             ROOM_REQUEST_PREFIX = "REQUEST_ROOMS"
             msg = f"{self.GAME_PREFIX}:{ROOM_REQUEST_PREFIX}:{self.name}:{self.role}"
@@ -373,7 +359,7 @@ class LogikApp:
 
             rooms_bytes = recvMessage(self.socket)
             if not rooms_bytes:
-                self.updateStatus("❌ Server neodpovídá.", "#e6194b")
+                self.updateStatus("Server neodpovídá.", "#e6194b")
                 self.master.after(1000, self.on_close)
                 return
 
@@ -389,9 +375,10 @@ class LogikApp:
             self._display_rooms(rooms_list)
 
         except Exception as e:
-            self.updateStatus(f"⚠️ Chyba v lobby komunikaci: {e}", "#e6194b")
+            self.updateStatus(f"Chyba v lobby komunikaci: {e}", "#e6194b")
             self.master.after(1000, self.on_close)
 
+    # Vykreslení místností v lobby
     def _display_rooms(self, rooms_list):
         """Vykreslí tlačítka místností do scrollable rámce v lobby."""
         self.master.after(0, lambda: self._clear_room_display())
@@ -401,13 +388,10 @@ class LogikApp:
             return
             
         self.updateStatus("Vyberte si volnou místnost pro hru:", "#4363d8")
-        
-        # === SCROLL FRAME ===
         frame_container = tk.Frame(self.room_list_frame, bg="#ffffff")
         frame_container.pack(fill="both", expand=True, padx=5, pady=5)
 
         canvas = tk.Canvas(frame_container, highlightthickness=0, bg="#ffffff")
-        # ttk scrollbar
         scrollbar = ttk.Scrollbar(frame_container, orient="vertical", command=canvas.yview)
         scrollable_frame = tk.Frame(canvas, bg="#ffffff")
 
@@ -432,12 +416,13 @@ class LogikApp:
                 width=30
             )
             btn.pack(pady=5, padx=10, ipady=5)
-            
+
+    # Vyčištění zobrazení místností     
     def _clear_room_display(self):
-        """Vyčistí scroll frame."""
         for widget in self.room_list_frame.winfo_children():
             widget.destroy()
 
+    # Připojení k vybrané místnosti
     def join_room(self, room_id):
         try:
             JOIN_PREFIX = "JOIN_ROOM"
@@ -469,37 +454,36 @@ class LogikApp:
             self.updateStatus(f"⚠️ Nepodařilo se připojit: {e}", "#e6194b")
             self.master.after(1500, lambda: threading.Thread(target=self.choose_room, daemon=True).start())
 
+    # Čekání na start hry po připojení k místnosti
     def wait_for_game_start(self):
         try:
-            # Resetuj socket timeout - čekáme nekonečně na GAME_START
             if self.socket:
                 self.socket.settimeout(None)
             
             data = recvMessage(self.socket)
             if not data:
-                self.updateStatus("❌ Server neodpovídá.", "#e6194b")
+                self.updateStatus("Server neodpovídá.", "#e6194b")
                 self.master.after(1000, self.on_close)
                 return
             data_str = data.decode()
             parts = data_str.split(":")
-            # GAME_START může přijít buď jako LK:GAME_START nebo LK:GAME_START:<name>
             if len(parts) >= 3:
                 self.other_player_name = parts[2]
 
             if self.evaluate_message(data_str, "GAME_START", -1):
                 message = f"{self.GAME_PREFIX}:READY_GAME_START:{self.name}:{self.role}"
                 sendMessage(self.socket, message.encode())
-                self.updateStatus("✅ Hra začíná!", "#3cb44b")
+                self.updateStatus("Hra začíná!", "#3cb44b")
                 self.master.after(500, self.show_game)
             else:
-                self.updateStatus("❌ Neočekávaná zpráva od serveru.", "#e6194b")
+                self.updateStatus("Neočekávaná zpráva od serveru.", "#e6194b")
                 self.master.after(1000, self.on_close)
         except Exception as e:
-            self.updateStatus(f"⚠️ Chyba při čekání na start hry: {e}", "#e6194b")
+            self.updateStatus(f"Chyba při čekání na start hry: {e}", "#e6194b")
             self.master.after(1000, self.on_close)
 
+    # Vytvoření panelu přítomnosti hráčů
     def buildPresenceBar(self, parent_frame):
-        """Vykreslí indikátory online/offline pro mě i protihráče."""
         self.presence_frame = tk.Frame(parent_frame, bg="#ffffff")
         self.presence_frame.pack(pady=2, fill=tk.X)
 
@@ -521,6 +505,7 @@ class LogikApp:
 
         self.updatePresenceUI()
 
+    # Obnovení UI přítomnosti hráčů
     def updatePresenceUI(self, opponent_name=None):
         """Obnoví barvy koleček podle online/offline stavů (thread-safe)."""
         if opponent_name:
@@ -548,7 +533,8 @@ class LogikApp:
             self.master.after(0, _draw)
         except Exception:
             pass
-
+    
+    # Parsování dat po reconnectu a obnovení herního stavu
     def parseAndAttachReconnectData(self, data):
         """Parsuje data po reconnectu a obnovuje herní stav."""
         print(f"Parsuji reconnect data: {data}")
@@ -600,6 +586,7 @@ class LogikApp:
         
         return game_state
 
+    # Zobrazení panelu pro vstup uživatele (výběr barev nebo tipování)
     def showInputPanel(self, role):
         """Zobrazí unifikovaný panel pro výběr barev (Evaluator) nebo tipování (Guesser)."""
         
@@ -660,6 +647,7 @@ class LogikApp:
             print(f"showInputPanel UI error: {e}")
             self._input_panel_initialized = False
 
+    # Obsluha kliknutí na slot pro výběr barvy
     def _on_input_slot_click(self, slot_idx):
         """Cykluje barvy pro daný slot."""
         try:
@@ -689,6 +677,7 @@ class LogikApp:
         except Exception as e:
             print(f"_on_input_slot_click error: {e}")
 
+    # Aktualizace stavu tlačítka odeslání vstupu
     def _update_input_submit_enabled(self):
         """Povolí tlačítko, pokud jsou vyplněny všechny sloty (ne 6)."""
         try:
@@ -700,7 +689,8 @@ class LogikApp:
                 self.input_submit_btn.config(state=(tk.NORMAL if all_set else tk.DISABLED))
         except Exception:
             pass
-
+    
+    # Reset vstupních slotů
     def _reset_input(self):
         """Vymaže všechny sloty."""
         try:
@@ -711,6 +701,7 @@ class LogikApp:
         except Exception:
             pass
 
+    # Odeslání vstupu serveru
     def _submit_input(self):
         """Sestaví zprávu a odešle ji na server."""
         try:
@@ -746,8 +737,8 @@ class LogikApp:
         except Exception as e:
             print(f"_submit_input error: {e}")
 
+    # Skrytí panelu pro vstup uživatele
     def hideInputPanel(self, show_status=False, status_text="", color=""):
-        """Skryje panel pro vstup a volitelně zobrazí status (pro Guessera/Evaluatora)."""
         try:
             if hasattr(self, 'input_frame') and self.input_frame:
                 for widget in self.input_frame.winfo_children():
@@ -759,9 +750,8 @@ class LogikApp:
         except Exception:
             pass
 
+    # Zobrazení panelu pro hodnocení tipu
     def showEvaluationPanel(self, guess_str):
-        """UI pro Hodnotitele (role 1): Vybrat počet černých a bílých kolíků."""
-        
         self.hideInputPanel() 
 
         eval_frame = tk.Frame(self.input_frame, bd=1, relief=tk.RIDGE, bg="#ffffff")
@@ -805,8 +795,8 @@ class LogikApp:
 
         self._update_eval_submit_enabled(0, 0)
     
+    # Povolí tlačítka pro submit
     def _update_eval_submit_enabled(self, blacks, whites):
-        """Povolí tlačítko pro hodnocení, pokud je součet menší nebo roven 4."""
         try:
             if hasattr(self, 'eval_submit_btn') and blacks + whites <= 4:
                  self.eval_submit_btn.config(state=tk.NORMAL)
@@ -815,6 +805,7 @@ class LogikApp:
         except Exception:
             pass
 
+    # Potvrzení ohodnocení
     def _submit_evaluation(self, blacks, whites):
         """Odešle hodnocení serveru."""
         if blacks + whites > 4:
@@ -836,6 +827,7 @@ class LogikApp:
             print(f"Chyba při odesílání hodnocení: {e}")
             self.updateStatus("Chyba při odesílání hodnocení", "#e6194b")
 
+    # Odešle tip
     def send_guess(self, colors_str):
         """Send GUESSING_COLORS message to server."""
         try:
@@ -845,6 +837,7 @@ class LogikApp:
         except Exception:
             return False
 
+    # Odešle volbu
     def send_choice(self, colors_str):
         """Send CHOOSING_COLORS message to server."""
         try:
@@ -854,6 +847,7 @@ class LogikApp:
         except Exception:
             return False
 
+    # Odešle hodnocení
     def send_evaluation(self, msg):
         """Send EVALUATION message to server."""
         try:
@@ -862,6 +856,7 @@ class LogikApp:
         except Exception:
             return False
 
+    # Přidá tip do kola, do hry s kokrétním čislem kola
     def addGuess(self, guess_data):
         """Přidá tip do aktuálního kola a obnoví desku."""
         if 0 <= self.currentRoundNumber < len(self.rounds):
@@ -876,6 +871,7 @@ class LogikApp:
         
         self.master.after(0, self.drawBoard)
 
+    # Přidá hodnocení do kola
     def addEvaluation(self, evaluation_tuple):
         """Přidá hodnocení do aktuálního kola, obnoví desku."""
         if 0 <= self.currentRoundNumber < len(self.rounds):
@@ -883,6 +879,7 @@ class LogikApp:
         
         self.master.after(0, self.drawBoard) 
 
+    # Přesune hru do dalšího kola
     def nextRound(self):
         """Přesune hru do dalšího kola a aktualizuje UI."""
         if self.currentRoundNumber < 9:
@@ -890,6 +887,7 @@ class LogikApp:
         
         self.master.after(0, self.drawBoard)
 
+    # Vykreslení hrací desky
     def drawBoard(self):
         """Vykreslí hrací desku a tajnou kombinaci (pro Evaluatora)."""
         
@@ -927,6 +925,7 @@ class LogikApp:
         
         self._draw_board_rows(inner_frame)
 
+    # Vykreslení tajné kombinace
     def _draw_secret_combination(self):
         """Vykreslí tajnou kombinaci v horní části okna (pouze pro Hodnotitele)."""
         if self.role != 1 or not hasattr(self, 'secret_canvas') or not self.input_values:
@@ -958,6 +957,7 @@ class LogikApp:
                 fill=fill_col, outline=outline, width=2
             )
 
+    # Vykreslení řádků desky
     def _draw_board_rows(self, inner_frame):
         """Vykresluje jednotlivé řádky desky do inner_frame."""
         
@@ -1006,7 +1006,7 @@ class LogikApp:
 
             # 3. Hodnocení (4 malé kolíky)
             eval_frame = tk.Frame(row, bg=bg_color)
-            eval_frame.pack(side=tk.LEFT, padx=10) # Dříve bylo side=tk.RIGHT
+            eval_frame.pack(side=tk.LEFT, padx=10)
             
             blacks, whites = parse_eval(rnd)
             k = 0
@@ -1027,13 +1027,11 @@ class LogikApp:
                 
         inner_frame.update_idletasks()
         canvas.config(scrollregion=canvas.bbox("all"))
-
+    
     def updateStatus(self, text, color):
-        """Aktualizace statusu v GUI (thread-safe)"""
         self.update_status_safely(self.status_label, text, color)
         
     def update_status_safely(self, label, text, color):
-        """Aktualizace libovolného labelu (thread-safe)"""
         try:
             if hasattr(self, 'master') and self.master.winfo_exists() and label:
                 def _upd():
@@ -1044,9 +1042,9 @@ class LogikApp:
                 self.master.after(0, _upd)
         except Exception:
             pass
-            
+
+    # Hodnocení přijaté zprávy, pokud projde je vlaidní vůči protokolu
     def evaluate_message(self, message, STATE_PREFIX, PARTS_COUNT):
-        """Zkontroluje formát a prefix zprávy."""
         parts = message.split(":")
         
         if parts[0] != self.GAME_PREFIX or parts[1] != STATE_PREFIX:
@@ -1057,8 +1055,8 @@ class LogikApp:
             
         return True
 
+    # Uzavření klienta a ukončení aplikace
     def on_close(self):
-        """Zavře socket a ukončí aplikaci."""
         self.isRunning = False
         self.connected = False
         
@@ -1085,8 +1083,8 @@ class LogikApp:
         except SystemExit:
             os._exit(0)
 
+    # Hlavní smyčka pro přijímání zpráv od serveru
     def recvMessageThread(self):
-        """Hlavní smyčka pro příjem zpráv od serveru"""
         # Nastav timeout, aby při ztrátě konektivity recv vyhodil výjimku
         try:
             if self.socket:
@@ -1116,8 +1114,8 @@ class LogikApp:
                 self.master.after(0, self.handleDisconnect)
                 time.sleep(0.1)
 
+    # Zpracování příchozích zpráv
     def handleMessage(self, message):
-        """Zpracování příchozích zpráv."""
         parts = message.split(":")
         
         if len(parts) < 2 or parts[0] != self.GAME_PREFIX:
@@ -1125,8 +1123,8 @@ class LogikApp:
         
         msg_type = parts[1]
         
+        # odpověď na ping
         if msg_type == "PING":
-            # během reconnectu neposílej PONG, ať to nezablokuje vlákno
             if self.reconnecting:
                 return
             pong_msg = f"{self.GAME_PREFIX}:PONG:{self.name}:{self.role}"
@@ -1136,7 +1134,7 @@ class LogikApp:
             except Exception:
                 self.master.after(0, self.handleDisconnect)
 
-        
+        # výhra/prohra
         elif msg_type == "WIN_GAME":
             if(int(parts[2]) == self.role):
                 self.updateStatus("Gratuluji! Vyhrál jsi hru!", "#ffe119") # Zlatá
@@ -1150,6 +1148,7 @@ class LogikApp:
             self.reconnecting = False
             self.master.after(2000, self.returnToLobby)
 
+        # permanentní odpojení
         elif msg_type == "PERMANENT_DISCONNECT":
             opponent_name = parts[2] if len(parts) > 2 else self.opponent_name
             self.opponent_online = 0
@@ -1162,6 +1161,7 @@ class LogikApp:
             self.isRunning = False
             self.master.after(2000, self.returnToLobby)
 
+        # dočasné odpojení
         elif msg_type == "TEMPORARY_DISCONNECT":
             opponent_name = parts[2] if len(parts) > 2 else self.opponent_name
             self.opponent_online = 0
@@ -1172,6 +1172,7 @@ class LogikApp:
             except Exception:
                 pass
 
+        # reconnect jiného hráče
         elif msg_type == "RECONNECT_OTHER_PLAYER":
             opponent_name = parts[2] if len(parts) > 2 else self.opponent_name
             self.opponent_online = 1
@@ -1183,12 +1184,13 @@ class LogikApp:
             except Exception:
                 pass
 
-
+        # herní zprávy (volba)
         elif msg_type == "CHOOSING_COLORS_CONFIRM":
             if self.role == 0:
                 self.updateStatus("Protihráč vybral kombinaci. Můžeš hádat!", "#3cb44b")
                 self.master.after(0, lambda: self.showInputPanel(role='guesser'))
         
+        # herní zprávy (tipování)
         elif msg_type == "GUESSING_COLORS_ACK":
             if len(parts) > 2:
                 guess_str = parts[2]
@@ -1203,7 +1205,7 @@ class LogikApp:
                     self.updateStatus("Tip odeslán. Čekám na hodnocení...", "#4363d8")
                     self.hideInputPanel(show_status=True, status_text="Tip odeslán. Čekám na hodnocení...", color="#4363d8")
 
-
+        # herní zprávy (hodnocení)
         elif msg_type == "EVALUATION_ACK":
             if len(parts) > 3:
                 try:
@@ -1228,7 +1230,7 @@ class LogikApp:
             self.isRunning = False
             self.master.after(5000, self.returnToLobby)
 
-
+    # Zpracování odpojení od serveru
     def handleDisconnect(self):
         """Zpracování odpojení od serveru"""
         if not self.isRunning or not hasattr(self, 'master') or not self.master.winfo_exists():
@@ -1239,6 +1241,7 @@ class LogikApp:
             self.updatePresenceUI()
             self.updateStatus("Odpojeno - pokus o reconnect...", "#e6194b")
     
+    # Monitor připojení a reconnect
     def reconnectMonitor(self):
         """Monitoruje stav připojení a pokouší se o reconnect"""
         retry_delay = 1.0
@@ -1258,6 +1261,7 @@ class LogikApp:
             else:
                 time.sleep(0.5)
     
+    # Pokus o reconnect k serveru
     def attemptReconnect(self):
         """Pokus o reconnect k serveru v Game fázi."""
         try:
@@ -1275,12 +1279,11 @@ class LogikApp:
                         self.socket.close()
                     except:
                         pass
-                    # DŮLEŽITÉ: Zastavit stará vlákna
                     self.isRunning = False
                     time.sleep(0.2)
                     self.socket = new_socket
                     self.reconnectData = msg
-                    self.isRunning = True  # Vrátit zpět pro nová vlákna
+                    self.isRunning = True
                     self.master.after(0, self.continueGame)
                     return True
             
@@ -1290,8 +1293,8 @@ class LogikApp:
         except Exception:
             return False
 
+    # Návrat do lobby
     def returnToLobby(self):
-        """Zavře herní UI a vrátí hráče zpět do lobby (se stejným socketem)."""
         self.isRunning = False
         self.reconnecting = False
         self.currentRoundNumber = 0
@@ -1322,6 +1325,10 @@ def main():
         print("Port musí být celé číslo.")
         sys.exit(1)
     
+    if(port < 1 or port > 65535):
+        print("Port musí být v rozsahu 1-65535.")
+        sys.exit(1)
+
     host = sys.argv[2] if len(sys.argv) >= 3 else "127.0.0.1"
     
     root = tk.Tk()

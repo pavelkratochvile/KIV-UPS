@@ -1,5 +1,6 @@
 #include "Player.hpp"
 
+/*Defaultní konstruktor*/
 Player::Player(int clientSocket){
     this->clientSocket = clientSocket;
     this->role = -1;
@@ -7,6 +8,7 @@ Player::Player(int clientSocket){
     this->isValid = true;
 }
 
+/*Defaultní konstruktor bez parametrů*/
 Player::Player(){
     this->clientSocket = 0;
     this->role = -1;
@@ -14,4 +16,5 @@ Player::Player(){
     this->isValid = false;
 }
 
+/*Destruktor*/
 Player::~Player(){}

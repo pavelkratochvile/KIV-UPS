@@ -2,12 +2,28 @@
 #include <iostream>
 #include <chrono>
 
+/**
+ * Třída reprezentující hráče
+ */
 class Player{
     public:
+        /**
+         * Konstruktor hráče
+         * @param clientSocket Socket hráče
+         */
         Player(int clientSocket);
+        
+        /**
+         * Defaultní konstruktor
+         */
         Player();
+        
+        /**
+         * Destruktor hráče
+         */
         ~Player();
-        // 0 je hádač, 1 je ohodnocovač
+        
+        /*Atributy hráče*/
         std::chrono::time_point<std::chrono::steady_clock> lastSeen;
         int clientSocket, role;
         std::string name; 

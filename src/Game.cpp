@@ -17,6 +17,7 @@ Game::Game(int serverSocket, int gameID, Server* server){
     this->server = server;
     this->kickedPlayers = 0;
 
+    /*Stavy a jejich obslužné metody*/
     stateHandlers = {
         {GameState::Choosing, [this](const std::string& message, bool guesser) {  return this->manageMessageChoosing(message, guesser); }},
         {GameState::Evaluating, [this](const std::string& message, bool guesser) {  return this->manageMessageEvaluating(message, guesser); }},
@@ -33,9 +34,10 @@ void Game::continueGame(Player& reconnectedPlayer){
     if(this->gameState != GameState::DisconnectedBoth){
         this->isPaused = false;
     }
-
+    /*Pokud se klient znovu připojil, musí se změnit stav hry*/
     manageStateChange(lastValidState, reconnectedPlayer.role == 0);
     
+    /*Pošlu zprávu o znovupřipojení druhému hráči*/
     if(reconnectedPlayer.role == 0 && playerE.isValid){
         sendMessage(playerE.clientSocket, ropm.serialize());
     } 
@@ -43,6 +45,7 @@ void Game::continueGame(Player& reconnectedPlayer){
         sendMessage(playerG.clientSocket, ropm.serialize());
     }
 
+    /*Nastavím nového socket pro připojeného hráče*/
     if(reconnectedPlayer.role == 0){
         playerG.isValid = true;
         playerG = reconnectedPlayer;
@@ -67,11 +70,12 @@ void Game::start(){
     playerE.lastSeen = std::chrono::steady_clock::now();
     playerG.lastSeen = std::chrono::steady_clock::now();
     gameInfo.fill(RoundInfo());
-    // Start main game loop
+    
+    /*Hlavní smyčka*/
     this->gameThread = std::thread(&Game::game, this);
     this->gameThread.detach();
 
-    // Start ping loops and receive loops
+    /*Vlákna pro odesílání ping zpráv a přijímání zpráv od hráčů*/
     this->sendThreadE = std::thread(&Game::sendPingLoopE, this);
     this->sendThreadE.detach();
 
@@ -84,22 +88,22 @@ void Game::start(){
     this->recvThreadG = std::thread(&Game::receiveLoopG, this);
     this->recvThreadG.detach();
 
-    // Additional thread to handle received pongs can be added here
+    /*Vlákno pro zpracování přijatých pong zpráv*/
     this->handleRecvPongThread = std::thread(&Game::handleReceivedPongs, this);
     this->handleRecvPongThread.detach();
 
-    // Thread to check player timeouts
+    /*Vlákno pro kontrolu timeoutů hráčů*/
     this->checkTimeoutsThread = std::thread(&Game::checkPlayerTimeouts, this);
     this->checkTimeoutsThread.detach();
 }
 
 void Game::checkPlayerTimeouts(){
     while(this->isRunning){
-        // If game is terminated or in a terminal state, stop watchdog
         if(!this->isRunning){
             break;
         }
-        // Pokud někdo byl vykopnut, ignoruj timeouty (probíhá návrat do lobby)
+
+        /*Pokud se hráči vyhazují, ignoruj timeouty (probíhá návrat do lobby)*/
         {
             std::lock_guard<std::mutex> lock(kickedPlayersMutex);
             if (kickedPlayers > 0) {
@@ -107,10 +111,13 @@ void Game::checkPlayerTimeouts(){
                 continue;
             }
         }
+
+        /*Kontrola timeoutů hráčů*/
         auto now = std::chrono::steady_clock::now();
         auto diffE = std::chrono::duration_cast<std::chrono::seconds>(now - playerE.lastSeen).count();
         auto diffG = std::chrono::duration_cast<std::chrono::seconds>(now - playerG.lastSeen).count();
         
+        /*Kontrola odpojení hráče E, pokud je odpojen déle než 40 sekund, ukonči hru*/
         if(diffE > 40){
             this->isRunning = false;
             Player playerGCopy = playerG;
@@ -119,10 +126,13 @@ void Game::checkPlayerTimeouts(){
             {
                 std::lock_guard<std::mutex> lock(gameStateMutex);
                 if(gameState != GameState::DissconnectedG){
+                    /*Informuje druhého hráče o trvalém odpojení hráče E*/
                     notifyPlayerPermanentDisconnect(this->playerE, playerGCopy);
                 }
             }
         }
+
+        /*Kontrola dočasného odpojení hráče E, pokud je odpojen déle než 7 sekund, pozastav hru*/
         else if(diffE > 7){
             if(playerE.isValid){
                 manageLastValidStateChange(gameState);
@@ -130,6 +140,7 @@ void Game::checkPlayerTimeouts(){
                 {
                     std::lock_guard<std::mutex> lock(gameStateMutex);
                     if(gameState != GameState::DissconnectedG){
+                        /*Informuje druhého hráče o dočasném odpojení hráče E*/
                         notifyPlayerTemporaryDisconnect(playerE, playerG);
                     }
                 }
@@ -137,14 +148,15 @@ void Game::checkPlayerTimeouts(){
                 this->isPaused = true;
             }
         }
-        else {
+        else 
+        {
             if(!playerE.isValid && this->isRunning){
                 playerE.isValid = true;
                 std::cout << "✅ Player E reconnected a je znovu aktivní!" << std::endl;
             }
         }
         
-        // Check Player G (stejná logika)
+        /*Kontrola odpojení hráče G, pokud je odpojen déle než 40 sekund, ukonči hru*/
         if(diffG > 40){
             std::cout << "Player G disconnected permanently (>40s). Ending game." << std::endl;
             this->isRunning = false;
@@ -158,6 +170,7 @@ void Game::checkPlayerTimeouts(){
             }
 
         }
+        /*Kontrola dočasného odpojení hráče G, pokud je odpojen déle než 7 sekund, pozastav hru*/
         else if(diffG > 7){
             if(playerG.isValid){
                 manageLastValidStateChange(gameState);
@@ -165,6 +178,7 @@ void Game::checkPlayerTimeouts(){
                 {
                     std::lock_guard<std::mutex> lock(gameStateMutex);
                     if(gameState != GameState::DisconnectedE){
+                        /*Informuje druhého hráče o dočasném odpojení hráče G*/
                         notifyPlayerTemporaryDisconnect(playerG, playerE);
                     }
                 }
@@ -172,33 +186,28 @@ void Game::checkPlayerTimeouts(){
                 this->isPaused = true;
             }
         }
-        else {
+        else 
+        {
             if(!playerG.isValid && this->isRunning){
                 playerG.isValid = true;
                 std::cout << "✅ Player G reconnected a je znovu aktivní!" << std::endl;
             }
         }
         
-        // Unpause pokud oba hráči jsou zpět
+        /*Pokud jsou oba hráči aktivní, pokračuj ve hře*/
         if(this->isPaused && playerE.isValid && playerG.isValid){
             this->isPaused = false;
             std::cout << "Both players active. Resuming game." << std::endl;
         }
-        
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 }
 
 void Game::emptyRoom(){
-    // Reset players to ensure server won't reuse sockets or consider them active
-    // DŮLEŽITÉ: Neresetuj lastSeen - musí zůstat pro správný timeout detekci!
-    std::cout << "⚠️  emptyRoom() volán - resetuji sockety, zachovávám lastSeen časy" << std::endl;
-    
+    /*Zde probíhá nastavení prázdné místnosti*/
     Player reset;
     reset.clientSocket = -1;
     reset.isValid = false;
-    
-    // Zachovej původní lastSeen time pro oba hráče
     auto playerELastSeen = this->playerE.lastSeen;
     auto playerGLastSeen = this->playerG.lastSeen;
     
@@ -210,19 +219,22 @@ void Game::emptyRoom(){
 }
 
 void Game::notifyPlayerTemporaryDisconnect(Player& disconnectedPlayer, Player& activePlayer){
+    /*Odešle zprávu o dočasném odpojení hráči*/
     TemporaryDisconnectMessage tdm = TemporaryDisconnectMessage(disconnectedPlayer);
     sendMessage(activePlayer.clientSocket, tdm.serialize());
     std::cout << "Odesílám TEMPORARY_DISCONNECT hráči " << (activePlayer.role == 0 ? "G" : "E") << std::endl;    
     bool gotConfirm = false;
 
+    /*Tady potom kontroluje potvrzení od aktivního hráče, zda není ve frontě*/
     for(int i = 0; i < 20 && !gotConfirm; i++){
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
         std::lock_guard<std::mutex> lock(recvDisconnectQueueMutex);
         if(!recvDisconnectMessageQueue.empty()){
+            /*Pokud je potvrzení ve frontě*/
+            
             std::string responseMessage = recvDisconnectMessageQueue.front();
             recvDisconnectMessageQueue.pop();
-            std::cout << "Přijato DISCONNECT_CONFIRM: " << responseMessage << std::endl;
-                        
+            std::cout << "Přijato DISCONNECT_CONFIRM: " << responseMessage << std::endl;          
             std::vector<std::string> parts = server->parseMessage(responseMessage);
             tdm.parts = parts;
             gotConfirm = tdm.evaluate();
@@ -237,16 +249,20 @@ void Game::notifyPlayerTemporaryDisconnect(Player& disconnectedPlayer, Player& a
 
 
 void Game::notifyPlayerPermanentDisconnect(Player& disconnectedPlayer, Player& activePlayer){
+    /*Pošle zprávu o trvalém odpojení hráči*/
     PermanentDisconnectMessage pdm = PermanentDisconnectMessage(disconnectedPlayer);
     if(activePlayer.isValid && activePlayer.clientSocket > 0){
         std::cout << "Odesílám PERMANENT_DISCONNECT aktivnímu hráči" << std::endl;
         sendMessage(activePlayer.clientSocket, pdm.serialize());
     
+        /*Zde kontroluje potvrzení od aktivního hráče*/
         bool gotConfirm = false;
         for(int i = 0; i < 20 && !gotConfirm; i++){
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
             std::lock_guard<std::mutex> lock(recvDisconnectQueueMutex);
             if(!recvDisconnectMessageQueue.empty()){
+                /*Potvrzení dorazilo a odpověď přišla*/
+                
                 std::string responseMessage = recvDisconnectMessageQueue.front();
                 recvDisconnectMessageQueue.pop();
                 std::cout << "Přijato DISCONNECT_CONFIRM: " << responseMessage << std::endl;
@@ -271,10 +287,13 @@ void Game::notifyPlayerPermanentDisconnect(Player& disconnectedPlayer, Player& a
 
 
 bool Game::manageMessageChoosing(const std::string& message, bool guesser){
+    /*Jenotlivé zprávy během fáze vybírání barev*/
     std::vector<std::string> parts = server->parseMessage(message);
     HeartBeatMessage hbm = HeartBeatMessage(parts);
     ChoosingColorsMessage crm = ChoosingColorsMessage(parts);
     ReconnectOtherPlayerMessage ropm = ReconnectOtherPlayerMessage(parts);
+    
+    /*Samozřejmě může přijít HeartBeatMessage*/
     if(hbm.evaluate()){
         if(guesser){
             std::lock_guard<std::mutex> lock(recvQueueMutexG);
@@ -285,19 +304,22 @@ bool Game::manageMessageChoosing(const std::string& message, bool guesser){
         }
         return true;
     }
+
+    /*Může přijít ChoosingColorsMessage pro výběr barev*/
     else if(crm.evaluate()){
         if(!sendMessage(playerE.clientSocket, crm.serialize())){
             std::cout << "Chyba při odesílání ChoosingColorsMessage hráči E" << std::endl;
-            /* tady odpojim a ukoncim hru */
+            return false;
         }
         if(!sendMessage(playerG.clientSocket, crm.serialize())){
             std::cout << "Chyba při odesílání ChoosingColorsMessage hráči G" << std::endl;
-            /* tady odpojim a ukoncim hru */
+            return false;   
         }
         this->chosenColors = crm.colors;
         gameState = GameState::Guessing;
         return true;
     }
+    /*Může přijít ReconnectOtherPlayerMessage od hráče, který není odpojený*/
     else if(ropm.evaluate()){
         std::cout << "ReconnectOtherPlayerMessage received. From not disconnected player." << std::endl;
         return true;
@@ -306,11 +328,14 @@ bool Game::manageMessageChoosing(const std::string& message, bool guesser){
 }
 
 bool Game::manageMessageGuessing(const std::string& message, bool guesser){
+    /*Všechny zprávy během fáze hádání barev*/
     std::vector<std::string> parts = server->parseMessage(message);
     HeartBeatMessage hbm = HeartBeatMessage(parts);
     GuessingColorsMessage gcm = GuessingColorsMessage(parts);
     WinGameMessage wgm = WinGameMessage(parts);
     ReconnectOtherPlayerMessage ropm = ReconnectOtherPlayerMessage(parts);
+    
+    /*Samozřejmě může přijít HeartBeatMessage, pro kontrolu zpojení*/
     if(hbm.evaluate()){
         if(guesser){
             std::lock_guard<std::mutex> lock(recvQueueMutexG);
@@ -321,7 +346,8 @@ bool Game::manageMessageGuessing(const std::string& message, bool guesser){
         }
         return true;
     }
-
+    
+    /*Zde může přijít WinGameMessage, při dokončení hry*/
     else if(wgm.evaluate()){
         if(guesser){
             Player playerGCopy = playerG;
@@ -351,6 +377,7 @@ bool Game::manageMessageGuessing(const std::string& message, bool guesser){
         }
     }
 
+    /*Zde může přijít GuessingColorsMessage s hádanými barvami*/
     else if(gcm.evaluate()){
         if(!sendMessage(playerE.clientSocket, gcm.serialize())){
             std::cout << "Chyba při odesílání GuessingColorsMessage hráči E" << std::endl;
@@ -364,6 +391,7 @@ bool Game::manageMessageGuessing(const std::string& message, bool guesser){
         gameState = GameState::Evaluating;
         return true;
     }
+    /*Může přijít ReconnectOtherPlayerMessage od hráče, který není odpojený*/
     else if(ropm.evaluate()){
         std::cout << "ReconnectOtherPlayerMessage received. From not disconnected player." << std::endl;
         return true;
@@ -372,10 +400,13 @@ bool Game::manageMessageGuessing(const std::string& message, bool guesser){
 }
 
 bool Game::manageMessageEvaluating(const std::string& message, bool guesser){
+    /*Všechny zprávy během fáze vyhodnocování, které mohou přijít.*/
     std::vector<std::string> parts = server->parseMessage(message);
     HeartBeatMessage hbm = HeartBeatMessage(parts);
     EvaluationMessage em = EvaluationMessage(parts);
     ReconnectOtherPlayerMessage ropm = ReconnectOtherPlayerMessage(parts);
+    
+    /*Zpráva pro udržení spojení*/
     if(hbm.evaluate()){
         if(guesser){
             std::lock_guard<std::mutex> lock(recvQueueMutexG);
@@ -386,6 +417,8 @@ bool Game::manageMessageEvaluating(const std::string& message, bool guesser){
         }
         return true;
     }
+
+    /*Zpráva s hodnocením hádání*/
     else if(em.evaluate()){
         if(!sendMessage(playerE.clientSocket, em.serialize())){
             std::cout << "Chyba při odesílání EvaluationMessage hráči E" << std::endl;
@@ -427,6 +460,8 @@ bool Game::manageMessageEvaluating(const std::string& message, bool guesser){
         gameState = GameState::Guessing;
         return true;
     }
+
+    /*Zpráva o připojení jiného hráče, který není odpojený*/
     else if(ropm.evaluate()){
         std::cout << "ReconnectOtherPlayerMessage received. From not disconnected player." << std::endl;
         return true;
@@ -435,28 +470,34 @@ bool Game::manageMessageEvaluating(const std::string& message, bool guesser){
 }
 
 bool Game::manageMessageDissconnectedE(const std::string& message, bool guesser){
+    /*Všechny zprávy během fáze kdy je E odpojený, které mohou přijít.*/
     std::vector<std::string> parts = server->parseMessage(message);
     GuessingColorsMessage gcm = GuessingColorsMessage(parts);
+    HeartBeatMessage hbm = HeartBeatMessage(parts);
+    PermanentDisconnectMessage pdm = PermanentDisconnectMessage(parts);
+    TemporaryDisconnectMessage tdm = TemporaryDisconnectMessage(parts);
     
-    if(message.find(ALIVE_PREFIX) != std::string::npos){  // PING od KTERÉHOKOLIV hráče
+    /*Zpráva pro udržení spojení*/
+    if(hbm.evaluate()){
         if(guesser){
-            std::lock_guard<std::mutex> lock(recvQueueMutexE);
+            std::lock_guard<std::mutex> lock(recvQueueMutexG);
             recvPingMessageQueueG.push(message);
         } else {
-            std::lock_guard<std::mutex> lock(recvQueueMutexG);
+            std::lock_guard<std::mutex> lock(recvQueueMutexE);
             recvPingMessageQueueE.push(message);
         }
         return true;
     }
     
-    else if(message.find(PERMANENT_DISCONNECT_CONFIRM_PREFIX) != std::string::npos || 
-        message.find(TEMPORARY_DISCONNECT_CONFIRM_PREFIX) != std::string::npos){
+    /*Zpráva o odpojení hráče*/
+    else if(pdm.evaluate() || tdm.evaluate()){
         std::lock_guard<std::mutex> lock(recvDisconnectQueueMutex);
         recvDisconnectMessageQueue.push(message);
         return true;
     }
+
+    /*Zpráva s hádáním barev*/
     else if(gcm.evaluate()){
-        // E je odpojený, neposíláme mu zprávu - jen G
         if(!sendMessage(playerG.clientSocket, gcm.serialize())){
             std::cout << "Chyba při odesílání GuessingColorsMessage hráči G" << std::endl;
             return false;
@@ -469,25 +510,34 @@ bool Game::manageMessageDissconnectedE(const std::string& message, bool guesser)
 }
 
 bool Game::manageMessageDissconnectedG(const std::string& message, bool guesser){
+    /*Všechny zprávy během fáze kdy je G odpojený, které mohou přijít.*/
     std::vector<std::string> parts = server->parseMessage(message);
     EvaluationMessage em = EvaluationMessage(parts);
     WinGameMessage wgm = WinGameMessage(parts);
-    if(message.find(ALIVE_PREFIX) != std::string::npos){  // PING od KTERÉHOKOLIV hráče
-        if(!guesser){
+    HeartBeatMessage hbm = HeartBeatMessage(parts);
+    PermanentDisconnectMessage pdm = PermanentDisconnectMessage(parts);
+    TemporaryDisconnectMessage tdm = TemporaryDisconnectMessage(parts);
+    
+    /*Zpráva pro udržení spojení*/
+    if(hbm.evaluate()){
+        if(guesser){
             std::lock_guard<std::mutex> lock(recvQueueMutexG);
-            recvPingMessageQueueE.push(message);
+            recvPingMessageQueueG.push(message);
         } else {
             std::lock_guard<std::mutex> lock(recvQueueMutexE);
-            recvPingMessageQueueG.push(message);
+            recvPingMessageQueueE.push(message);
         }
         return true;
     }
-    else if(message.find(PERMANENT_DISCONNECT_CONFIRM_PREFIX) != std::string::npos || 
-        message.find(TEMPORARY_DISCONNECT_CONFIRM_PREFIX) != std::string::npos){
+
+    /*Zpráva o odpojení hráče*/
+    else if(pdm.evaluate() || tdm.evaluate()){
         std::lock_guard<std::mutex> lock(recvDisconnectQueueMutex);
         recvDisconnectMessageQueue.push(message);
         return true;
     }
+
+    /*Zpráva s hodnocením hádání*/
     else if(em.evaluate()){
         if(!sendMessage(playerE.clientSocket, em.serialize())){
             std::cout << "Chyba při odesílání EvaluationMessage hráči E" << std::endl;
@@ -516,6 +566,8 @@ bool Game::manageMessageDissconnectedG(const std::string& message, bool guesser)
         manageLastValidStateChange(GameState::Guessing);
         return true;
     }
+
+    /*Zpráva o výhře ve hře a vhodná obsluha ukončení hry.*/
     else if(wgm.evaluate()){
         if(!guesser){
             Player playerECopy = playerE;
@@ -535,18 +587,25 @@ bool Game::manageMessageDissconnectedG(const std::string& message, bool guesser)
 }
 
 bool Game::manageMessageDissconnectedBoth(const std::string& message, bool guesser){
-    if(message.find(PERMANENT_DISCONNECT_CONFIRM_PREFIX) != std::string::npos || 
-        message.find(TEMPORARY_DISCONNECT_CONFIRM_PREFIX) != std::string::npos){
+    /*Všechny zprávy během fáze kdy jsou oba odpojení, které mohou přijít.*/
+    std::vector<std::string> parts = server->parseMessage(message);
+    PermanentDisconnectMessage pdm = PermanentDisconnectMessage(parts);
+    TemporaryDisconnectMessage tdm = TemporaryDisconnectMessage(parts);
+
+    if(pdm.evaluate() || tdm.evaluate()){
         std::lock_guard<std::mutex> lock(recvDisconnectQueueMutex);
         recvDisconnectMessageQueue.push(message);
         return true;
     }
+
     return false;
 }
 
 void Game::handleReceivedPongs(){
+    /*Dokud hra běží přímáme a zpracováváme pong zpětné zprávy*/
     while(this->isRunning){
         {
+            /*Zpracování PONG zpráv od hráče E*/
             std::lock_guard<std::mutex> lock(recvQueueMutexE);
             if(!recvPingMessageQueueE.empty()){
                 std::string pongMessage = recvPingMessageQueueE.front();
@@ -556,6 +615,7 @@ void Game::handleReceivedPongs(){
             }
         }
         {
+            /*Zpracování PONG zpráv od hráče G*/
             std::lock_guard<std::mutex> lock(recvQueueMutexG);
             if(!recvPingMessageQueueG.empty()){
                 std::string pongMessage = recvPingMessageQueueG.front();
@@ -569,6 +629,7 @@ void Game::handleReceivedPongs(){
 }
 
 void Game::sendPingLoopE(){
+    /*Dokud hra běží posíláme PING zprávy hráči E*/
     while(this->isRunning){
         HeartBeatMessage hbm = HeartBeatMessage();
         if(!sendMessage(this->playerE.clientSocket, hbm.serialize())){
@@ -580,6 +641,7 @@ void Game::sendPingLoopE(){
 }
 
 void Game::sendPingLoopG(){
+    /*Dokud hra běží posíláme PING zprávy hráči G*/
     while(this->isRunning){
         HeartBeatMessage hbm = HeartBeatMessage();
         if(!sendMessage(this->playerG.clientSocket, hbm.serialize())){
@@ -591,15 +653,21 @@ void Game::sendPingLoopG(){
 }
 
 void Game::receiveLoopE(){
+    
+    /*Dokud hra běží přijímáme a zpracováváme zprávy od hráče E*/
     while(this->isRunning){
         std::string message;
         
+        /*Zde je jediné místo kde se zprávy přijímají od hráče E. Tím zamezíme, že se je vlákna budou navzájem krást*/
         if(recvMessage(this->playerE.clientSocket, message)){
             if(message.empty()){
                 continue;
             }
+
+            /*Zde se zavolá handler pro aktuální stav a zprávu od hráče E*/
             bool rightReceive = stateHandlers[gameState](message, false);
             if(!rightReceive){
+                /*Pokud je zpráva nevalidní nebo poslaná v nevalidním stavu, ukončuji hru*/
                 std::cout << "Chybná zpráva od hráče E v aktuálním stavu, ukončuji hru: "<< message << "Ve stavu: ";
                 this->gameState = GameState::DisconnectedE;
                 this->isRunning = false;
@@ -623,14 +691,18 @@ void Game::receiveLoopE(){
 }
 
 void Game::receiveLoopG(){
+
+    /*Dokud hra běží přijímáme a zpracováváme zprávy od hráče G*/
     while(this->isRunning){
         std::string message;
+        /*Zde je jediné místo kde se zprávy přijímají od hráče G. Tím zamezíme, že se je vlákna budou navzájem krást*/
         if(recvMessage(this->playerG.clientSocket, message)){
             if(message.empty()){
                 continue;
             }
             bool rightReceive = stateHandlers[gameState](message, true);
             if(!rightReceive){
+                /*Pokud je zpráva nevalidní nebo poslaná v nevalidním stavu, ukončuji hru*/
                 std::cout << "Chybná zpráva od hráče G v aktuálním stavu, ukončuji hru: "<< message << "Ve stavu: ";
                 printGameState(gameState);
                 std::cout << std::endl;
@@ -650,15 +722,16 @@ void Game::receiveLoopG(){
             }
         }
         else{
-            // Recv selhal - watchdog to vyhodnotí podle lastSeen
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     }
 }
 
 void Game::manageStateChange(GameState gameState , bool isGuesserSetting){
+    /*Metoda pro správu změny herního stavu.*/
     std::lock_guard<std::mutex> lock(gameStateMutex);
     
+    /*Drobné vysvětlení pokud je jeden z hráčů odpojení a druhý se odpojí nastavuje se stav, že jsou odpojeni oba*/
     if(gameState == GameState::DissconnectedG && this->gameState == GameState::DisconnectedE){
         this->gameState = GameState::DisconnectedBoth;
         return;
@@ -667,6 +740,8 @@ void Game::manageStateChange(GameState gameState , bool isGuesserSetting){
         this->gameState = GameState::DisconnectedBoth;
         return;
     }
+
+    /*Pokud jsou oba hráči odpojeni a jeden z nich se znovu připojí, nastaví se stav na odpojení druhého hráče*/
     if(this->gameState == GameState::DisconnectedBoth && isGuesserSetting){
         std::cout << "Nastavuji stav na DisconnectedE" << std::endl;
         this->gameState = GameState::DisconnectedE;
@@ -677,6 +752,8 @@ void Game::manageStateChange(GameState gameState , bool isGuesserSetting){
         this->gameState = GameState::DissconnectedG;
         return;
     }
+
+    /*Jinak se nastaví nový herní stav*/
     std::cout << "Nastavuji herní stav na: ";
     printGameState(gameState);
     std::cout << std::endl;
@@ -684,6 +761,7 @@ void Game::manageStateChange(GameState gameState , bool isGuesserSetting){
 }
 
 void Game::manageLastValidStateChange(GameState state){
+    /*Metoda pro správu změny posledního validního herního stavu.*/
     std::lock_guard<std::mutex> lock(lastValidStateMutex);
     if(gameState != GameState::DisconnectedBoth){
         this->lastValidState = state;
@@ -691,6 +769,7 @@ void Game::manageLastValidStateChange(GameState state){
 }
 
 void Game::game(){
+    /*Hlavní smyčka hry. Zde slouží jen pro logy.*/
     int i = 0;
     while(this->isRunning){
         std::cout << "Current Game State: ";
@@ -704,6 +783,7 @@ void Game::game(){
 }
 
 void Game::printGameState(GameState gameState){
+    /*Metoda vypisuje aktuální herní stav na standardní výstup.*/
     switch(gameState){
         case GameState::Choosing:
             std::cout << "Choosing" << std::endl;

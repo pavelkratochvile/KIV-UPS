@@ -1,12 +1,24 @@
 #include "Messages.hpp"
 #include <cstring>
 
+/**
+ * Implementace všech zpráv je stejná a proto ji popíšu zde jednou ale platí pro všechny.
+ * Konstruktor přijímá vector stringů, který obsahuje jednotlivé části zprávy (rozdělené podle ':'). Někdy ale může mít i jiné parametry, záleží na zprávě.
+ * Metoda serialize() vrací celý obsah zprávy jako jeden string, připravený k odeslání přes socket.
+ * Metoda evaluate() kontroluje, zda příchozí zpráva má správný formát a obsahuje očekávané hodnoty.
+ * To kontroluje podle prefixů z hlavičkového souboru a definovaného počtu částí.
+ * Pokud je vše v pořádku, vrací true, jinak false.
+ */
+
 RoundInfo::RoundInfo(){
     guesses = {6,6,6,6};
     blacks = 0;
     whites = 0;
 }
 
+// -------------------------------------------------
+// LoginMessage
+// -------------------------------------------------
 LoginMessage::LoginMessage(std::vector<std::string>& parts){
     this->parts = parts;
     this->name = std::string(parts[2]);
@@ -17,6 +29,24 @@ std::string LoginMessage::serialize() const{
     return (std::string(GAME_PREFIX) + DELIM + std::string(LOGIN_PREFIX) + DELIM + this->name + DELIM + std::to_string(this->role));
 }
 
+bool LoginMessage::evaluate(){
+    if(parts.size() != LOGIN_PARTS_LENGTH){
+        return false;
+    }
+    std::string gamePrefix = parts[0];
+    std::string statePrefix = parts[1];
+    std::string name = parts[2];
+    int role = std::stoi(parts[3]);
+
+    if(gamePrefix != GAME_PREFIX || statePrefix != START_LOGIN_PREFIX || (role !=0 && role !=1)){
+        return false;
+    }
+    return true;
+}
+
+// -------------------------------------------------
+// RoomListMessage
+// -------------------------------------------------
 RoomListMessage::RoomListMessage(std::vector<std::string>& parts, std::vector<std::string>& roomList){
     this->parts = parts;
     this->roomList = roomList;
@@ -34,6 +64,24 @@ std::string RoomListMessage::serialize() const{
     return messageRooms;
 }
 
+bool RoomListMessage::evaluate(){
+    if(parts.size() != LOBBY_PARTS_LENGTH){
+        return false;
+    }
+    std::string gamePrefix = parts[0];
+    std::string statePrefix = parts[1];
+    std::string name = parts[2];
+    int roomID = std::stoi(parts[3]);
+
+    if(gamePrefix != GAME_PREFIX || statePrefix != REQUEST_ROOMS_PREFIX){
+        return false;
+    }
+    return true;
+}
+
+// -------------------------------------------------
+// RoomEntryMessage
+// -------------------------------------------------
 RoomEntryMessage::RoomEntryMessage(std::vector<std::string>& parts, bool type){
     this->parts = parts;
     this->type = type;
@@ -48,37 +96,6 @@ std::string RoomEntryMessage::serialize() const{
         fullMessage = std::string(GAME_PREFIX) + DELIM + std::string(ROOM_ENTRY_FAIL_PREFIX);
     }
     return fullMessage;
-}
-
-bool LoginMessage::evaluate(){
-    if(parts.size() != LOGIN_PARTS_LENGTH){
-        return false;
-    }
-    
-    std::string gamePrefix = parts[0];
-    std::string statePrefix = parts[1];
-    std::string name = parts[2];
-    int role = std::stoi(parts[3]);
-
-    if(gamePrefix != GAME_PREFIX || statePrefix != START_LOGIN_PREFIX || (role !=0 && role !=1)){
-        return false;
-    }
-    return true;
-}
-
-bool RoomListMessage::evaluate(){
-    if(parts.size() != LOBBY_PARTS_LENGTH){
-        return false;
-    }
-    std::string gamePrefix = parts[0];
-    std::string statePrefix = parts[1];
-    std::string name = parts[2];
-    int roomID = std::stoi(parts[3]);
-
-    if(gamePrefix != GAME_PREFIX || statePrefix != REQUEST_ROOMS_PREFIX){
-        return false;
-    }
-    return true;
 }
 
 bool RoomEntryMessage::evaluate(){
@@ -153,11 +170,17 @@ bool HeartBeatMessage::evaluate(){
     return true;
 }
 
+
 // -------------------------------------------------
 // PermanentDisconnectMessage
 // -------------------------------------------------
 PermanentDisconnectMessage::PermanentDisconnectMessage(Player& disconnectedPlayer){
     this->disconnectedPlayer = disconnectedPlayer;
+}
+
+PermanentDisconnectMessage::PermanentDisconnectMessage(std::vector<std::string>& parts){
+    this->parts = parts;
+    
 }
 
 std::string PermanentDisconnectMessage::serialize() const{
@@ -184,6 +207,9 @@ bool PermanentDisconnectMessage::evaluate(){
 // -------------------------------------------------
 TemporaryDisconnectMessage::TemporaryDisconnectMessage(Player& disconnectedPlayer){
     this->disconnectedPlayer = disconnectedPlayer;
+}
+TemporaryDisconnectMessage::TemporaryDisconnectMessage(std::vector<std::string>& parts){
+    this->parts = parts;
 }
 
 std::string TemporaryDisconnectMessage::serialize() const{
